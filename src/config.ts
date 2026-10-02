@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 /** Load and validate process configuration. Throws on missing required values. */
 
 export interface Config {
@@ -11,12 +13,6 @@ export interface Config {
   port: number;
 }
 
-function requireEnv(name: string): string {
-  const v = process.env[name];
-  if (!v || v.trim() === "") throw new Error(`Missing required environment variable: ${name}`);
-  return v.trim();
-}
-
 function intEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw === "") return fallback;
@@ -26,7 +22,6 @@ function intEnv(name: string, fallback: number): number {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  // Allow tests to inject env without a real DATABASE_URL when they mock the client.
   const databaseUrl = env.DATABASE_URL?.trim() || "";
   const credentialsEncKey = env.CREDENTIALS_ENC_KEY?.trim() || "";
   const jwtSecret = env.JWT_SECRET?.trim() || "";
