@@ -1,0 +1,176 @@
+// Status Pulse data model — Week 2 tables (accounts, projects, services, checks, audit).
+// Constraints Prisma cannot express (partial unique indexes, CHECK, RLS) are in the migration SQL.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String         @unique
+  passwordHash String         @map("password_hash")
+  name         String?
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  memberships    Membership[]
+  refreshTokens  RefreshToken[]
+  auditEntries   AuditLog[]     @relation("AuditActor")
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}
+
+model Project {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  slug      String    @unique
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  memberships Membership[]
+  services    Service[]
+  auditEntries AuditLog[]
+
+  @@map("projects")
+}
+
+model Membership {
+  projectId String   @map("project_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  role      String   // Owner | Responder | Viewer — CHECK in migration
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@map("memberships")
+}
+
+model Service {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId          String    @map("project_id") @db.Uuid
+  name               String
+  url                String
+  method             String    @default("GET")
+  intervalSeconds    Int       @map("interval_seconds")
+  timeoutSeconds     Int       @map("timeout_seconds")
+  expectedStatusCodes Int[]    @default([200]) @map("expected_status_codes")
+  expectedBodyText   String?   @map("expected_body_text")
+  isPublic           Boolean   @default(false) @map("is_public")
+  enabled            Boolean   @default(true)
+  credentialsEnc     Bytes?    @map("credentials_enc")
+  failThreshold      Int       @default(3) @map("fail_threshold")
+  recoveryThreshold  Int       @default(2) @map("recovery_threshold")
+  slowThreshold      Int       @default(3) @map("slow_threshold")
+  degradedMs         Int?      @map("degraded_ms")
+  currentStatus      String    @default("Unknown") @map("current_status")
+  statusSince        DateTime  @default(now()) @map("status_since") @db.Timestamptz
+  version            Int       @default(1)
+  deletedAt          DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  project         Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  configVersions  ServiceConfigVersion[]
+  checkJobs       CheckJob[]
+
+  @@index([projectId])
+  @@index([enabled, deletedAt])
+  @@map("services")
+}
+
+model ServiceConfigVersion {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  serviceId   String   @map("service_id") @db.Uuid
+  version     Int
+  snapshot    Json
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, version])
+  @@map("service_config_versions")
+}
+
+model CheckJob {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  serviceId    String    @map("service_id") @db.Uuid
+  scheduledFor DateTime  @map("scheduled_for") @db.Timestamptz
+  status       String    @default("queued") // queued | leased | done | skipped
+  leaseUntil   DateTime? @map("lease_until") @db.Timestamptz
+  attempts     Int       @default(0)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  service Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  result  CheckResult?
+
+  @@unique([serviceId, scheduledFor])
+  @@index([status, scheduledFor])
+  @@map("check_jobs")
+}
+
+model CheckResult {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  jobId         String   @unique @map("job_id") @db.Uuid
+  serviceId     String   @map("service_id") @db.Uuid
+  statusCode    Int?     @map("status_code")
+  latencyMs     Int?     @map("latency_ms")
+  passed        Boolean
+  failureReason String?  @map("failure_reason")
+  configVersion Int      @map("config_version")
+  checkedAt     DateTime @map("checked_at") @db.Timestamptz
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  job CheckJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId, checkedAt])
+  @@map("check_results")
+}
+
+model AuditLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId  String?  @map("project_id") @db.Uuid
+  actorUserId String? @map("actor_user_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  details    Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  actor   User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@map("audit_log")
+}
+
+model SchedulerFailure {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  message   String
+  details   Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("scheduler_failures")
+}

@@ -11,3 +11,6 @@ coverage/
 .env.*
 !.env.example
 !.env.template
+
+
+prisma/generated/
