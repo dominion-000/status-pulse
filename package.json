@@ -12,11 +12,11 @@
     "build:watch": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "start:api": "node dist/api/main.js",
+    "start:api": "node dist/main.js",
     "start:scheduler": "node dist/scheduler/main.js",
     "start:worker": "node dist/worker/main.js",
     "start:dispatcher": "node dist/dispatcher/main.js",
-    "dev:api": "node --watch dist/api/main.js",
+    "dev:api": "node --watch dist/main.js",
     "dev:scheduler": "node --watch dist/scheduler/main.js",
     "dev:worker": "node --watch dist/worker/main.js"
   },
