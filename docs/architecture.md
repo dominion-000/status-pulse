@@ -25,17 +25,22 @@ flowchart LR
 
 ## Code layout
 
-A single package with one `package.json` and one folder per process. Each process has its own entry file. The code is compiled with `tsc` to `dist/` and run with `node`.
+A single package with one `package.json`. The API is the main program and sits at the root of `src/`. The scheduler, worker and dispatcher each have a folder, and logic shared by several processes is in `core/` and `db/`. Every process has its own entry file. The code is compiled with `tsc` to `dist/` and run with `node`.
 
 ```
 src/
-  api/         Express application: routes, middleware       entry: api/main.ts
-  scheduler/   tick loop and sweeper                         entry: scheduler/main.ts
-  worker/      claim a job, run the check, save the outcome  entry: worker/main.ts
-  dispatcher/  deliver alerts from the outbox                entry: dispatcher/main.ts
-  core/        status rules, state machines, URL safety, clock (no database access)
-  db/          Prisma client and the raw SQL queries
-prisma/        schema and migrations
+  main.ts        API entry point
+  app.ts         Express application factory
+  logging.ts     request logging
+  routes/        API routes
+  middleware/    authentication, permissions, validation
+  scheduler/     tick loop and sweeper                         entry: scheduler/main.ts
+  worker/        claim a job, run the check, save the outcome  entry: worker/main.ts
+  dispatcher/    deliver alerts from the outbox                entry: dispatcher/main.ts
+  core/          status rules, state machines, URL safety, clock (no database access)
+  db/            Prisma client and the raw SQL queries
+tests/           automated tests
+prisma/          schema and migrations
 ```
 
 `core/` does not import from `db/`, so the business rules are tested without a database.
