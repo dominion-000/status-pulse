@@ -57,34 +57,20 @@ Integration tests against a real database are planned for Week 5 concurrency sce
 
 Base URL: `http://localhost:3000`
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/auth/register` | — | Register (bcrypt cost 12) |
-| POST | `/auth/login` | — | Access + refresh tokens |
-| POST | `/auth/refresh` | — | Rotate refresh token |
-| GET | `/projects` | Bearer | List memberships |
-| POST | `/projects` | Bearer | Create project (caller = Owner) |
-| GET | `/projects/:id` | Bearer | Project detail |
-| POST | `/projects/:id/members` | Owner | Invite Responder/Viewer |
-| GET | `/projects/:id/members` | Viewer+ | List members |
-| POST | `/projects/:id/services` | Owner | Create service |
-| GET | `/projects/:id/services` | Viewer+ | List services |
-| GET | `/projects/:id/services/:sid` | Viewer+ | Service detail |
-| POST | `/projects/:id/services/:sid/disable` | Owner | Disable checks |
-| POST | `/projects/:id/services/:sid/enable` | Owner | Re-enable |
-| GET | `/projects/:id/services/:sid/results` | Viewer+ | Recent check results |
-| GET | `/health` | — | Liveness |
-
-See [docs/api-examples.md](docs/api-examples.md) for request/response samples.
-
-## Architecture
-
-See [docs/architecture.md](docs/architecture.md), [docs/erd.md](docs/erd.md), [docs/stories.md](docs/stories.md), [docs/plan.md](docs/plan.md).
-
-## Shared environment (Render)
-
-`render.yaml` deploys one web service that runs `pnpm start:all` (API + scheduler + worker). Point `DATABASE_URL` at a Supabase project; enable the migration on first deploy.
-
-## Presentation
-
-See [docs/presentation.md](docs/presentation.md) for oral, slide-UI, and plain-docs presentation paths for Weeks 1–2.
+| Method | Path                                  | Auth    | Description                     |
+| ------ | ------------------------------------- | ------- | ------------------------------- |
+| POST   | `/auth/register`                      | —       | Register (bcrypt cost 12)       |
+| POST   | `/auth/login`                         | —       | Access + refresh tokens         |
+| POST   | `/auth/refresh`                       | —       | Rotate refresh token            |
+| GET    | `/projects`                           | Bearer  | List memberships                |
+| POST   | `/projects`                           | Bearer  | Create project (caller = Owner) |
+| GET    | `/projects/:id`                       | Bearer  | Project detail                  |
+| POST   | `/projects/:id/members`               | Owner   | Invite Responder/Viewer         |
+| GET    | `/projects/:id/members`               | Viewer+ | List members                    |
+| POST   | `/projects/:id/services`              | Owner   | Create service                  |
+| GET    | `/projects/:id/services`              | Viewer+ | List services                   |
+| GET    | `/projects/:id/services/:sid`         | Viewer+ | Service detail                  |
+| POST   | `/projects/:id/services/:sid/disable` | Owner   | Disable checks                  |
+| POST   | `/projects/:id/services/:sid/enable`  | Owner   | Re-enable                       |
+| GET    | `/projects/:id/services/:sid/results` | Viewer+ | Recent check results            |
+| GET    | `/health`                             | —       | Liveness                        |
