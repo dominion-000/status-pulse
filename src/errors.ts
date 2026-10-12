@@ -13,7 +13,12 @@ export class AppError extends Error {
   readonly status: number;
   readonly details?: unknown;
 
-  constructor(code: ErrorCode, message: string, status: number, details?: unknown) {
+  constructor(
+    code: ErrorCode,
+    message: string,
+    status: number,
+    details?: unknown,
+  ) {
     super(message);
     this.name = "AppError";
     this.code = code;
@@ -30,7 +35,9 @@ export function conflictError(message: string): AppError {
   return new AppError("CONFLICT", message, 409);
 }
 
-export function unauthorizedError(message = "Authentication required"): AppError {
+export function unauthorizedError(
+  message = "Authentication required",
+): AppError {
   return new AppError("UNAUTHORIZED", message, 401);
 }
 

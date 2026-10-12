@@ -12,9 +12,12 @@ export interface ClaimedJob {
 
 /**
  * Insert one job per enabled service for the slot containing `now`.
- * Epoch-aligned scheduled_for + UNIQUE (service_id, scheduled_for) → exactly one job per slot.
+ * Epoch-aligned scheduled_for + UNIQUE (service_id, scheduled_for) = exactly one job per slot.
  */
-export async function enqueueJobs(pool: Pool | PoolClient, now: Date): Promise<number> {
+export async function enqueueJobs(
+  pool: Pool | PoolClient,
+  now: Date,
+): Promise<number> {
   const result = await pool.query(
     `INSERT INTO check_jobs (service_id, scheduled_for)
      SELECT s.id,
@@ -62,7 +65,10 @@ export async function claimJob(
 }
 
 /** Mark jobs whose slot has passed as skipped (sweeper). */
-export async function skipStaleJobs(pool: Pool | PoolClient, now: Date): Promise<number> {
+export async function skipStaleJobs(
+  pool: Pool | PoolClient,
+  now: Date,
+): Promise<number> {
   const result = await pool.query(
     `UPDATE check_jobs j
         SET status = 'skipped', lease_until = NULL
@@ -75,7 +81,10 @@ export async function skipStaleJobs(pool: Pool | PoolClient, now: Date): Promise
   return result.rowCount ?? 0;
 }
 
-export async function markJobDone(pool: Pool | PoolClient, jobId: string): Promise<void> {
+export async function markJobDone(
+  pool: Pool | PoolClient,
+  jobId: string,
+): Promise<void> {
   await pool.query(
     `UPDATE check_jobs SET status = 'done', lease_until = NULL WHERE id = $1`,
     [jobId],
@@ -87,12 +96,18 @@ export async function lockService(
   client: PoolClient,
   serviceId: string,
 ): Promise<Record<string, unknown> | null> {
-  const result = await client.query(`SELECT * FROM services WHERE id = $1 FOR UPDATE`, [serviceId]);
+  const result = await client.query(
+    `SELECT * FROM services WHERE id = $1 FOR UPDATE`,
+    [serviceId],
+  );
   return result.rows[0] ?? null;
 }
 
 /** Run a tick: enqueue + skip stale. Used by the scheduler process. */
-export async function schedulerTick(pool: Pool, clock: Clock): Promise<{ enqueued: number; skipped: number }> {
+export async function schedulerTick(
+  pool: Pool,
+  clock: Clock,
+): Promise<{ enqueued: number; skipped: number }> {
   const now = clock.now();
   const enqueued = await enqueueJobs(pool, now);
   const skipped = await skipStaleJobs(pool, now);

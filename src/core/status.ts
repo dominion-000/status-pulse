@@ -1,4 +1,4 @@
-// Service status calculation (SP-04). Pure: no database, no clock, no I/O.
+// Service status calculation. No database, no clock, no I/O.
 // The worker, the API and the sweeper all call this one function, each inside a transaction that holds the
 // service row lock, so the rules exist in exactly one place.
 
@@ -59,15 +59,25 @@ export interface Evaluation {
 export const STALE_AFTER_INTERVALS = 3;
 
 /** How many recent results `evaluate` needs. */
-export function evaluationWindow(t: Pick<Thresholds, "failThreshold" | "recoveryThreshold" | "slowThreshold">): number {
+export function evaluationWindow(
+  t: Pick<Thresholds, "failThreshold" | "recoveryThreshold" | "slowThreshold">,
+): number {
   return Math.max(t.failThreshold, t.recoveryThreshold, t.slowThreshold) + 1;
 }
 
 function isSlow(r: CheckSample, degradedMs: number | null): boolean {
-  return r.passed && degradedMs !== null && r.latencyMs !== null && r.latencyMs > degradedMs;
+  return (
+    r.passed &&
+    degradedMs !== null &&
+    r.latencyMs !== null &&
+    r.latencyMs > degradedMs
+  );
 }
 
-function trailing(results: readonly CheckSample[], matches: (r: CheckSample) => boolean): number {
+function trailing(
+  results: readonly CheckSample[],
+  matches: (r: CheckSample) => boolean,
+): number {
   let n = 0;
   for (let i = results.length - 1; i >= 0 && matches(results[i]!); i--) n++;
   return n;
@@ -78,7 +88,10 @@ function trailing(results: readonly CheckSample[], matches: (r: CheckSample) => 
  * A failure restarts it. The first slow-but-successful result after the failures counts, because the
  * service may be waking up. Any later slow result does not count and restarts the streak.
  */
-function recoveryStreakFromOutage(results: readonly CheckSample[], degradedMs: number | null): number {
+function recoveryStreakFromOutage(
+  results: readonly CheckSample[],
+  degradedMs: number | null,
+): number {
   let streak = 0;
   let afterFailure = true; // Outage is only entered through failures, so the result before the window was one
   for (const r of results) {
@@ -100,7 +113,10 @@ function nextComputed(input: EvaluationInput): ServiceStatus {
   const { previous, results, thresholds: t } = input;
   const failures = trailing(results, (r) => !r.passed);
   const slow = trailing(results, (r) => isSlow(r, t.degradedMs));
-  const fastPasses = trailing(results, (r) => r.passed && !isSlow(r, t.degradedMs));
+  const fastPasses = trailing(
+    results,
+    (r) => r.passed && !isSlow(r, t.degradedMs),
+  );
   const last = results[results.length - 1];
 
   switch (previous) {
@@ -114,7 +130,10 @@ function nextComputed(input: EvaluationInput): ServiceStatus {
       if (failures >= t.failThreshold) return "Outage";
       return fastPasses >= t.recoveryThreshold ? "Operational" : "Degraded";
     case "Outage":
-      return recoveryStreakFromOutage(results, t.degradedMs) >= t.recoveryThreshold ? "Degraded" : "Outage";
+      return recoveryStreakFromOutage(results, t.degradedMs) >=
+        t.recoveryThreshold
+        ? "Degraded"
+        : "Outage";
   }
 }
 
@@ -127,7 +146,10 @@ export function evaluate(input: EvaluationInput): Evaluation {
   if (!input.enabled) {
     computed = "Unknown";
     source = "disabled";
-  } else if (input.lastResultAt === null || now.getTime() - input.lastResultAt.getTime() > staleAfterMs) {
+  } else if (
+    input.lastResultAt === null ||
+    now.getTime() - input.lastResultAt.getTime() > staleAfterMs
+  ) {
     computed = "Unknown";
     source = "stale";
   } else {
@@ -135,9 +157,17 @@ export function evaluate(input: EvaluationInput): Evaluation {
   }
 
   // A disabled service shows Unknown whatever an override says: no checks are running (SP-02.9).
-  const overrideActive = input.enabled && override !== null && now.getTime() < override.expiresAt.getTime();
+  const overrideActive =
+    input.enabled &&
+    override !== null &&
+    now.getTime() < override.expiresAt.getTime();
   if (overrideActive && override) {
-    return { computed, displayed: override.status, overrideActive: true, source: "override" };
+    return {
+      computed,
+      displayed: override.status,
+      overrideActive: true,
+      source: "override",
+    };
   }
   return { computed, displayed: computed, overrideActive: false, source };
 }

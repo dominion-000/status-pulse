@@ -23,7 +23,9 @@ const notFound: RequestHandler = (_req, res) => {
 
 const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof AppError) {
-    const body: { error: { code: string; message: string; details?: unknown } } = {
+    const body: {
+      error: { code: string; message: string; details?: unknown };
+    } = {
       error: { code: err.code, message: err.message },
     };
     if (err.details !== undefined) body.error.details = err.details;

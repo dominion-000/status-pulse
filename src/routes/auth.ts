@@ -32,7 +32,11 @@ function tokenPair(
   rawRefresh: string,
 ): { accessToken: string; refreshToken: string; expiresIn: number } {
   return {
-    accessToken: signAccessToken(userId, config.jwtSecret, config.accessTokenTtlSeconds),
+    accessToken: signAccessToken(
+      userId,
+      config.jwtSecret,
+      config.accessTokenTtlSeconds,
+    ),
     refreshToken: rawRefresh,
     expiresIn: config.accessTokenTtlSeconds,
   };
@@ -43,13 +47,22 @@ export function authRoutes(prisma: PrismaClient, config: Config): Router {
 
   r.post("/register", validateBody(registerSchema), async (req, res, next) => {
     try {
-      const { email, password, name } = req.body as z.infer<typeof registerSchema>;
+      const { email, password, name } = req.body as z.infer<
+        typeof registerSchema
+      >;
       const issues = passwordIssues(password);
       if (issues.length) {
-        return next(validationError("Invalid password", issues.map((m) => ({ path: "password", message: m }))));
+        return next(
+          validationError(
+            "Invalid password",
+            issues.map((m) => ({ path: "password", message: m })),
+          ),
+        );
       }
 
-      const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+      const existing = await prisma.user.findUnique({
+        where: { email: email.toLowerCase() },
+      });
       if (existing) return next(conflictError("Email already registered"));
 
       const passwordHash = await hashPassword(password);
@@ -62,7 +75,9 @@ export function authRoutes(prisma: PrismaClient, config: Config): Router {
       });
 
       const { raw, hash } = generateRefreshToken();
-      const expiresAt = new Date(Date.now() + config.refreshTokenTtlDays * 86400_000);
+      const expiresAt = new Date(
+        Date.now() + config.refreshTokenTtlDays * 86400_000,
+      );
       await prisma.refreshToken.create({
         data: { userId: user.id, tokenHash: hash, expiresAt },
       });
@@ -79,13 +94,17 @@ export function authRoutes(prisma: PrismaClient, config: Config): Router {
   r.post("/login", validateBody(loginSchema), async (req, res, next) => {
     try {
       const { email, password } = req.body as z.infer<typeof loginSchema>;
-      const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+      const user = await prisma.user.findUnique({
+        where: { email: email.toLowerCase() },
+      });
       if (!user || !(await verifyPassword(password, user.passwordHash))) {
         return next(unauthorizedError("Invalid email or password"));
       }
 
       const { raw, hash } = generateRefreshToken();
-      const expiresAt = new Date(Date.now() + config.refreshTokenTtlDays * 86400_000);
+      const expiresAt = new Date(
+        Date.now() + config.refreshTokenTtlDays * 86400_000,
+      );
       await prisma.refreshToken.create({
         data: { userId: user.id, tokenHash: hash, expiresAt },
       });
@@ -128,7 +147,9 @@ export function authRoutes(prisma: PrismaClient, config: Config): Router {
 
       // Rotate: revoke old, issue new
       const { raw, hash } = generateRefreshToken();
-      const expiresAt = new Date(Date.now() + config.refreshTokenTtlDays * 86400_000);
+      const expiresAt = new Date(
+        Date.now() + config.refreshTokenTtlDays * 86400_000,
+      );
       await prisma.$transaction([
         prisma.refreshToken.update({
           where: { id: stored.id },

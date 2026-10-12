@@ -5,7 +5,8 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 function keyFrom(base64Key: string): Buffer {
   const key = Buffer.from(base64Key, "base64");
-  if (key.length !== 32) throw new Error("CREDENTIALS_ENC_KEY must be 32 bytes, base64 encoded");
+  if (key.length !== 32)
+    throw new Error("CREDENTIALS_ENC_KEY must be 32 bytes, base64 encoded");
   return key;
 }
 
@@ -22,5 +23,7 @@ export function decryptSecret(blob: Buffer, base64Key: string): string {
   const body = blob.subarray(28);
   const decipher = createDecipheriv("aes-256-gcm", keyFrom(base64Key), iv);
   decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(body), decipher.final()]).toString("utf8");
+  return Buffer.concat([decipher.update(body), decipher.final()]).toString(
+    "utf8",
+  );
 }

@@ -13,10 +13,17 @@ async function processOne(): Promise<boolean> {
   const prisma = getPrisma(config.databaseUrl);
   const now = systemClock.now();
 
-  const job = await claimJob(pool, now, config.workerLeaseSeconds, config.workerMaxAttempts);
+  const job = await claimJob(
+    pool,
+    now,
+    config.workerLeaseSeconds,
+    config.workerMaxAttempts,
+  );
   if (!job) return false;
 
-  const service = await prisma.service.findUnique({ where: { id: job.service_id } });
+  const service = await prisma.service.findUnique({
+    where: { id: job.service_id },
+  });
   if (!service || !service.enabled || service.deletedAt) {
     await markJobDone(pool, job.id);
     return true;
@@ -25,7 +32,10 @@ async function processOne(): Promise<boolean> {
   let authorization: string | undefined;
   if (service.credentialsEnc) {
     try {
-      authorization = decryptSecret(Buffer.from(service.credentialsEnc), config.credentialsEncKey);
+      authorization = decryptSecret(
+        Buffer.from(service.credentialsEnc),
+        config.credentialsEncKey,
+      );
     } catch {
       // Treat decrypt failure as a failed check
     }
@@ -61,7 +71,10 @@ async function processOne(): Promise<boolean> {
       if (outcome.passed && service.currentStatus === "Unknown") {
         await tx.service.update({
           where: { id: service.id },
-          data: { currentStatus: "Operational", statusSince: systemClock.now() },
+          data: {
+            currentStatus: "Operational",
+            statusSince: systemClock.now(),
+          },
         });
       } else if (!outcome.passed && service.currentStatus === "Operational") {
         // Do not jump to Outage without threshold logic (Week 3); leave as-is
@@ -74,7 +87,10 @@ async function processOne(): Promise<boolean> {
   } catch (err: unknown) {
     // Unique violation on job_id → another worker already wrote the result
     const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("Unique constraint") || message.includes("duplicate key")) {
+    if (
+      message.includes("Unique constraint") ||
+      message.includes("duplicate key")
+    ) {
       await markJobDone(pool, job.id);
     } else {
       console.error("worker save failed", job.id, err);

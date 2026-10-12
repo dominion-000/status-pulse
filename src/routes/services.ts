@@ -16,11 +16,17 @@ const createServiceSchema = z.object({
   name: z.string().min(1).max(120),
   url: z.string().min(1).max(2048),
   method: z.enum(["GET", "HEAD", "POST"]).default("GET"),
-  intervalSeconds: z.number().int().refine((n) => (INTERVALS as readonly number[]).includes(n), {
-    message: `must be one of ${INTERVALS.join(", ")}`,
-  }),
+  intervalSeconds: z
+    .number()
+    .int()
+    .refine((n) => (INTERVALS as readonly number[]).includes(n), {
+      message: `must be one of ${INTERVALS.join(", ")}`,
+    }),
   timeoutSeconds: z.number().int().positive(),
-  expectedStatusCodes: z.array(z.number().int().min(100).max(599)).min(1).default([200]),
+  expectedStatusCodes: z
+    .array(z.number().int().min(100).max(599))
+    .min(1)
+    .default([200]),
   expectedBodyText: z.string().max(500).optional(),
   isPublic: z.boolean().default(false),
   credentials: z.string().max(2000).optional(),
@@ -91,7 +97,10 @@ export function serviceRoutes(prisma: PrismaClient, config: Config): Router {
         if (body.timeoutSeconds >= body.intervalSeconds) {
           return next(
             validationError("Validation failed", [
-              { path: "timeoutSeconds", message: "must be less than intervalSeconds" },
+              {
+                path: "timeoutSeconds",
+                message: "must be less than intervalSeconds",
+              },
             ]),
           );
         }
@@ -107,7 +116,9 @@ export function serviceRoutes(prisma: PrismaClient, config: Config): Router {
         }
 
         const credentialsEnc = body.credentials
-          ? new Uint8Array(encryptSecret(body.credentials, config.credentialsEncKey))
+          ? new Uint8Array(
+              encryptSecret(body.credentials, config.credentialsEncKey),
+            )
           : null;
 
         const snapshot = {
@@ -230,7 +241,11 @@ export function serviceRoutes(prisma: PrismaClient, config: Config): Router {
         const updated = await prisma.$transaction(async (tx) => {
           const s = await tx.service.update({
             where: { id: service.id },
-            data: { enabled: false, currentStatus: "Unknown", statusSince: new Date() },
+            data: {
+              enabled: false,
+              currentStatus: "Unknown",
+              statusSince: new Date(),
+            },
           });
           await tx.auditLog.create({
             data: {

@@ -17,7 +17,8 @@ function intEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw === "") return fallback;
   const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) throw new Error(`${name} must be a positive number`);
+  if (!Number.isFinite(n) || n <= 0)
+    throw new Error(`${name} must be a positive number`);
   return Math.floor(n);
 }
 
@@ -27,8 +28,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const jwtSecret = env.JWT_SECRET?.trim() || "";
 
   if (!env.STATUS_PULSE_SKIP_CONFIG_CHECK) {
-    if (!databaseUrl) throw new Error("Missing required environment variable: DATABASE_URL");
-    if (!credentialsEncKey) throw new Error("Missing required environment variable: CREDENTIALS_ENC_KEY");
+    if (!databaseUrl)
+      throw new Error("Missing required environment variable: DATABASE_URL");
+    if (!credentialsEncKey)
+      throw new Error(
+        "Missing required environment variable: CREDENTIALS_ENC_KEY",
+      );
     if (!jwtSecret || jwtSecret.length < 32) {
       throw new Error("JWT_SECRET must be set and at least 32 characters");
     }

@@ -9,6 +9,10 @@ export function slotStart(now: Date, intervalSeconds: number): Date {
 }
 
 /** True while `slot` is the current slot for this interval; older jobs are stale and are skipped (SP-03.7). */
-export function isCurrentSlot(slot: Date, now: Date, intervalSeconds: number): boolean {
+export function isCurrentSlot(
+  slot: Date,
+  now: Date,
+  intervalSeconds: number,
+): boolean {
   return slotStart(now, intervalSeconds).getTime() === slot.getTime();
 }

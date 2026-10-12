@@ -1,7 +1,4 @@
-/**
- * Seed demonstration accounts and a sample project/service for the shared environment.
- * Usage: DATABASE_URL=... CREDENTIALS_ENC_KEY=... JWT_SECRET=... node dist/scripts/seed.js
- */
+// Seed demonstration accounts and a sample project/service for the shared environment.
 import { loadConfig } from "../config";
 import { getPrisma, disconnectDb } from "../db/client";
 import { hashPassword } from "../core/password";
@@ -29,7 +26,9 @@ async function main(): Promise<void> {
 
   let project = await prisma.project.findUnique({ where: { slug: "demo" } });
   if (!project) {
-    project = await prisma.project.create({ data: { name: "Demo Project", slug: "demo" } });
+    project = await prisma.project.create({
+      data: { name: "Demo Project", slug: "demo" },
+    });
     await prisma.membership.create({
       data: { projectId: project.id, userId: user.id, role: "Owner" },
     });

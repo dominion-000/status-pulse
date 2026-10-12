@@ -25,7 +25,7 @@ const FORBIDDEN_V4: readonly Cidr4[] = [
 
 function v4ToInt(ip: string): number {
   const [a = 0, b = 0, c = 0, d = 0] = ip.split(".").map(Number);
-  return (((a << 24) | (b << 16) | (c << 8) | d) >>> 0);
+  return ((a << 24) | (b << 16) | (c << 8) | d) >>> 0;
 }
 
 function inCidr4(ip: number, base: string, bits: number): boolean {
@@ -66,7 +66,9 @@ function parseV6(input: string): number[] | null {
     if (missing < 1) return null;
     groups = [...head, ...Array<string>(missing).fill("0"), ...rest];
   }
-  const nums = groups.map((g) => (/^[0-9a-f]{1,4}$/.test(g) ? parseInt(g, 16) : Number.NaN));
+  const nums = groups.map((g) =>
+    /^[0-9a-f]{1,4}$/.test(g) ? parseInt(g, 16) : Number.NaN,
+  );
   return nums.some(Number.isNaN) ? null : nums;
 }
 
@@ -77,11 +79,21 @@ function embeddedV4(hi: number, lo: number): string {
 function isForbiddenV6(g: number[]): boolean {
   const [g0 = 0, g1 = 0, g2 = 0, g3 = 0, g4 = 0, g5 = 0, g6 = 0, g7 = 0] = g;
   // ::/96 covers the unspecified address (::), loopback (::1) and old IPv4-compatible forms
-  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) return true;
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0)
+    return true;
   // ::ffff:0:0/96, an IPv4 address carried inside IPv6
-  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0xffff) return isForbiddenV4(embeddedV4(g6, g7));
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0xffff)
+    return isForbiddenV4(embeddedV4(g6, g7));
   // 64:ff9b::/96, NAT64: judged by the IPv4 address it carries
-  if (g0 === 0x64 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) return isForbiddenV4(embeddedV4(g6, g7));
+  if (
+    g0 === 0x64 &&
+    g1 === 0xff9b &&
+    g2 === 0 &&
+    g3 === 0 &&
+    g4 === 0 &&
+    g5 === 0
+  )
+    return isForbiddenV4(embeddedV4(g6, g7));
   if (g0 === 0x64 && g1 === 0xff9b && g2 === 1) return true; // 64:ff9b:1::/48 local-use NAT64
   // 2002::/16, 6to4: judged by the IPv4 address it carries
   if (g0 === 0x2002) return isForbiddenV4(embeddedV4(g1, g2));
@@ -109,7 +121,14 @@ export function stripBrackets(host: string): string {
   return host.replace(/^\[/, "").replace(/\]$/, "");
 }
 
-const PRIVATE_SUFFIXES = [".localhost", ".local", ".internal", ".lan", ".localdomain", ".home.arpa"];
+const PRIVATE_SUFFIXES = [
+  ".localhost",
+  ".local",
+  ".internal",
+  ".lan",
+  ".localdomain",
+  ".home.arpa",
+];
 
 export interface UrlCheck {
   url: URL | null;
@@ -130,15 +149,20 @@ export function checkServiceUrl(raw: string): UrlCheck {
     return { url: null, issues: ["is not a valid URL"] };
   }
   const issues: string[] = [];
-  if (url.protocol !== "http:" && url.protocol !== "https:") issues.push("must use http or https");
+  if (url.protocol !== "http:" && url.protocol !== "https:")
+    issues.push("must use http or https");
   if (url.username || url.password) issues.push("must not contain credentials");
 
   const host = stripBrackets(url.hostname).toLowerCase().replace(/\.$/, "");
   if (!host) {
     issues.push("must include a host");
   } else if (isIP(host)) {
-    if (isForbiddenIp(host)) issues.push("host is a private, loopback or link-local address");
-  } else if (host === "localhost" || PRIVATE_SUFFIXES.some((s) => host.endsWith(s))) {
+    if (isForbiddenIp(host))
+      issues.push("host is a private, loopback or link-local address");
+  } else if (
+    host === "localhost" ||
+    PRIVATE_SUFFIXES.some((s) => host.endsWith(s))
+  ) {
     issues.push("host is not publicly routable");
   } else if (!host.includes(".")) {
     issues.push("host must be a public domain name");

@@ -32,11 +32,21 @@ export async function runHttpCheck(input: CheckInput): Promise<CheckOutcome> {
   try {
     url = new URL(input.url);
   } catch {
-    return { statusCode: null, latencyMs: null, passed: false, failureReason: "invalid_url" };
+    return {
+      statusCode: null,
+      latencyMs: null,
+      passed: false,
+      failureReason: "invalid_url",
+    };
   }
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    return { statusCode: null, latencyMs: null, passed: false, failureReason: "unsupported_scheme" };
+    return {
+      statusCode: null,
+      latencyMs: null,
+      passed: false,
+      failureReason: "unsupported_scheme",
+    };
   }
 
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
@@ -48,16 +58,31 @@ export async function runHttpCheck(input: CheckInput): Promise<CheckOutcome> {
       const records = await lookup(hostname, { all: true });
       const first = records[0];
       if (!first) {
-        return { statusCode: null, latencyMs: Date.now() - started, passed: false, failureReason: "dns_failed" };
+        return {
+          statusCode: null,
+          latencyMs: Date.now() - started,
+          passed: false,
+          failureReason: "dns_failed",
+        };
       }
       address = first.address;
     }
   } catch {
-    return { statusCode: null, latencyMs: Date.now() - started, passed: false, failureReason: "dns_failed" };
+    return {
+      statusCode: null,
+      latencyMs: Date.now() - started,
+      passed: false,
+      failureReason: "dns_failed",
+    };
   }
 
   if (isForbiddenIp(address)) {
-    return { statusCode: null, latencyMs: Date.now() - started, passed: false, failureReason: "forbidden_address" };
+    return {
+      statusCode: null,
+      latencyMs: Date.now() - started,
+      passed: false,
+      failureReason: "forbidden_address",
+    };
   }
 
   const isHttps = url.protocol === "https:";
@@ -77,7 +102,9 @@ export async function runHttpCheck(input: CheckInput): Promise<CheckOutcome> {
           Host: url.host,
           "User-Agent": "StatusPulse/0.1",
           Accept: "*/*",
-          ...(input.authorization ? { Authorization: input.authorization } : {}),
+          ...(input.authorization
+            ? { Authorization: input.authorization }
+            : {}),
         },
         timeout: input.timeoutSeconds * 1000,
         // Do not follow redirects
@@ -101,7 +128,10 @@ export async function runHttpCheck(input: CheckInput): Promise<CheckOutcome> {
             });
             return;
           }
-          if (input.expectedBodyText && !body.includes(input.expectedBodyText)) {
+          if (
+            input.expectedBodyText &&
+            !body.includes(input.expectedBodyText)
+          ) {
             resolve({
               statusCode,
               latencyMs,
