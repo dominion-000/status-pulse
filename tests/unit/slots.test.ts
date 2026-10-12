@@ -11,13 +11,18 @@ describe("slotStart (SP-03.1)", () => {
   });
 
   it("starts a new slot exactly at the boundary", () => {
-    expect(slotStart(new Date("2026-10-01T10:01:00.000Z"), 60).toISOString()).toBe("2026-10-01T10:01:00.000Z");
+    expect(
+      slotStart(new Date("2026-10-01T10:01:00.000Z"), 60).toISOString(),
+    ).toBe("2026-10-01T10:01:00.000Z");
   });
 
-  it.each([30, 60, 300, 600])("aligns to the epoch for a %i second interval", (interval) => {
-    const slot = slotStart(new Date("2026-10-01T10:07:43Z"), interval);
-    expect((slot.getTime() / 1000) % interval).toBe(0);
-  });
+  it.each([30, 60, 300, 600])(
+    "aligns to the epoch for a %i second interval",
+    (interval) => {
+      const slot = slotStart(new Date("2026-10-01T10:07:43Z"), interval);
+      expect((slot.getTime() / 1000) % interval).toBe(0);
+    },
+  );
 });
 
 describe("isCurrentSlot (SP-03.7)", () => {

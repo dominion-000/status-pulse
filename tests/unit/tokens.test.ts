@@ -18,7 +18,9 @@ describe("access tokens", () => {
 
   it("rejects a token signed with the wrong secret", () => {
     const token = signAccessToken("user-1", SECRET, 60);
-    expect(() => verifyAccessToken(token, "other-secret-at-least-32-chars!!!!")).toThrow();
+    expect(() =>
+      verifyAccessToken(token, "other-secret-at-least-32-chars!!!!"),
+    ).toThrow();
   });
 });
 

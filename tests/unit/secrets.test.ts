@@ -12,12 +12,16 @@ describe("credential encryption (SP-02.6)", () => {
   });
 
   it("produces a different blob each time for the same input", () => {
-    expect(encryptSecret("same", key).equals(encryptSecret("same", key))).toBe(false);
+    expect(encryptSecret("same", key).equals(encryptSecret("same", key))).toBe(
+      false,
+    );
   });
 
   it("fails with the wrong key", () => {
     const blob = encryptSecret("x", key);
-    expect(() => decryptSecret(blob, randomBytes(32).toString("base64"))).toThrow();
+    expect(() =>
+      decryptSecret(blob, randomBytes(32).toString("base64")),
+    ).toThrow();
   });
 
   it("fails when the stored data has been modified", () => {

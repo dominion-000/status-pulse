@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { hashPassword, passwordIssues, verifyPassword } from "../../src/core/password";
+import {
+  hashPassword,
+  passwordIssues,
+  verifyPassword,
+} from "../../src/core/password";
 
 describe("password hashing (SP-01.1)", () => {
   it("uses bcrypt at cost 12 with a fresh salt each time", async () => {
@@ -22,7 +26,9 @@ describe("password hashing (SP-01.1)", () => {
 
   it("refuses to hash a password longer than 72 bytes instead of truncating it", async () => {
     await expect(hashPassword("a".repeat(73))).rejects.toThrow(/72 bytes/);
-    expect(await verifyPassword("a".repeat(73), await hashPassword("a".repeat(72)))).toBe(false);
+    expect(
+      await verifyPassword("a".repeat(73), await hashPassword("a".repeat(72))),
+    ).toBe(false);
   });
 });
 

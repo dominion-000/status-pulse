@@ -9,13 +9,27 @@ import {
 } from "../../src/core/status";
 
 const NOW = new Date("2026-10-05T12:00:00Z");
-const thresholds: Thresholds = { failThreshold: 3, recoveryThreshold: 2, slowThreshold: 3, degradedMs: 1000, intervalSeconds: 60 };
+const thresholds: Thresholds = {
+  failThreshold: 3,
+  recoveryThreshold: 2,
+  slowThreshold: 3,
+  degradedMs: 1000,
+  intervalSeconds: 60,
+};
 
 // Compact notation: p = fast pass, s = slow pass, f = failure.
 const seq = (s: string): CheckSample[] =>
-  [...s].map((c) => (c === "f" ? { passed: false, latencyMs: null } : { passed: true, latencyMs: c === "s" ? 2500 : 120 }));
+  [...s].map((c) =>
+    c === "f"
+      ? { passed: false, latencyMs: null }
+      : { passed: true, latencyMs: c === "s" ? 2500 : 120 },
+  );
 
-function status(previous: ServiceStatus, results: string, overrides: Partial<EvaluationInput> = {}) {
+function status(
+  previous: ServiceStatus,
+  results: string,
+  overrides: Partial<EvaluationInput> = {},
+) {
   return evaluate({
     previous,
     results: seq(results),
@@ -61,11 +75,17 @@ describe("from Operational (SP-04.2)", () => {
 
   it("never becomes Degraded when the service has no latency limit", () => {
     const noLimit = { ...thresholds, degradedMs: null };
-    expect(status("Operational", "sssss", { thresholds: noLimit }).computed).toBe("Operational");
+    expect(
+      status("Operational", "sssss", { thresholds: noLimit }).computed,
+    ).toBe("Operational");
   });
 
   it("uses the thresholds of the service", () => {
-    expect(status("Operational", "f", { thresholds: { ...thresholds, failThreshold: 1 } }).computed).toBe("Outage");
+    expect(
+      status("Operational", "f", {
+        thresholds: { ...thresholds, failThreshold: 1 },
+      }).computed,
+    ).toBe("Outage");
   });
 });
 
@@ -111,7 +131,11 @@ describe("from Outage: recovery steps through Degraded (SP-04.3)", () => {
     });
 
     it("does not allow the slow result when the service has no latency limit to exceed", () => {
-      expect(status("Outage", "pp", { thresholds: { ...thresholds, degradedMs: null } }).computed).toBe("Degraded");
+      expect(
+        status("Outage", "pp", {
+          thresholds: { ...thresholds, degradedMs: null },
+        }).computed,
+      ).toBe("Degraded");
     });
   });
 
@@ -127,22 +151,32 @@ describe("stale results and disabled services (SP-04.6, SP-02.9)", () => {
   const intervalMs = thresholds.intervalSeconds * 1000;
 
   it("is Unknown when there has been no result for more than three intervals", () => {
-    const e = status("Operational", "pppp", { lastResultAt: new Date(NOW.getTime() - 3 * intervalMs - 1) });
+    const e = status("Operational", "pppp", {
+      lastResultAt: new Date(NOW.getTime() - 3 * intervalMs - 1),
+    });
     expect(e.computed).toBe("Unknown");
     expect(e.source).toBe("stale");
   });
 
   it("is still current at exactly three intervals", () => {
-    const e = status("Operational", "pppp", { lastResultAt: new Date(NOW.getTime() - 3 * intervalMs) });
+    const e = status("Operational", "pppp", {
+      lastResultAt: new Date(NOW.getTime() - 3 * intervalMs),
+    });
     expect(e.computed).toBe("Operational");
   });
 
   it("is Unknown when there never was a result", () => {
-    expect(status("Operational", "", { lastResultAt: null }).computed).toBe("Unknown");
+    expect(status("Operational", "", { lastResultAt: null }).computed).toBe(
+      "Unknown",
+    );
   });
 
   it("goes Unknown from Outage as well, without opening anything new", () => {
-    expect(status("Outage", "fff", { lastResultAt: new Date(NOW.getTime() - 10 * intervalMs) }).computed).toBe("Unknown");
+    expect(
+      status("Outage", "fff", {
+        lastResultAt: new Date(NOW.getTime() - 10 * intervalMs),
+      }).computed,
+    ).toBe("Unknown");
   });
 
   it("is Unknown when disabled, whatever the results say", () => {
@@ -153,7 +187,10 @@ describe("stale results and disabled services (SP-04.6, SP-02.9)", () => {
 });
 
 describe("overrides (SP-04.5, SP-04.8)", () => {
-  const active = { status: "Operational" as const, expiresAt: new Date(NOW.getTime() + 3_600_000) };
+  const active = {
+    status: "Operational" as const,
+    expiresAt: new Date(NOW.getTime() + 3_600_000),
+  };
 
   it("shows the override while the computed status keeps following the results", () => {
     const e = status("Operational", "fff", { override: active });
@@ -172,13 +209,19 @@ describe("overrides (SP-04.5, SP-04.8)", () => {
   });
 
   it("applies over a stale service too", () => {
-    const e = status("Operational", "pppp", { override: active, lastResultAt: new Date(NOW.getTime() - 3_600_000) });
+    const e = status("Operational", "pppp", {
+      override: active,
+      lastResultAt: new Date(NOW.getTime() - 3_600_000),
+    });
     expect(e.computed).toBe("Unknown");
     expect(e.displayed).toBe("Operational");
   });
 
   it("is ignored on a disabled service", () => {
-    const e = status("Operational", "pppp", { override: active, enabled: false });
+    const e = status("Operational", "pppp", {
+      override: active,
+      enabled: false,
+    });
     expect(e.displayed).toBe("Unknown");
     expect(e.overrideActive).toBe(false);
   });
@@ -193,7 +236,9 @@ describe("evaluate is a pure function", () => {
     const window = evaluationWindow(thresholds);
     const long = "p".repeat(50) + "fff";
     const tail = long.slice(-window);
-    expect(status("Operational", long).computed).toBe(status("Operational", tail).computed);
+    expect(status("Operational", long).computed).toBe(
+      status("Operational", tail).computed,
+    );
     expect(status("Operational", long).computed).toBe("Outage");
   });
 });
