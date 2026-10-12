@@ -1,6 +1,3 @@
-// Status Pulse data model — Week 2 tables (accounts, projects, services, checks, audit).
-// Constraints Prisma cannot express (partial unique indexes, CHECK, RLS) are in the migration SQL.
-
 generator client {
   provider = "prisma-client-js"
   output   = "./generated"
@@ -21,6 +18,11 @@ model User {
   memberships    Membership[]
   refreshTokens  RefreshToken[]
   auditEntries   AuditLog[]     @relation("AuditActor")
+  overridesSet       StatusOverride[] @relation("OverrideActor")
+  overridesEnded     StatusOverride[] @relation("OverrideEnder")
+  incidentsOpened    Incident[]       @relation("IncidentOpener")
+  incidentsResolved  Incident[]       @relation("IncidentResolver")
+  incidentUpdates    IncidentUpdate[] @relation("IncidentUpdateActor")
 
   @@map("users")
 }
@@ -50,6 +52,7 @@ model Project {
   memberships Membership[]
   services    Service[]
   auditEntries AuditLog[]
+  incidents   Incident[]
 
   @@map("projects")
 }
@@ -86,6 +89,9 @@ model Service {
   degradedMs         Int?      @map("degraded_ms")
   currentStatus      String    @default("Unknown") @map("current_status")
   statusSince        DateTime  @default(now()) @map("status_since") @db.Timestamptz
+  computedStatus     String    @default("Unknown") @map("computed_status")
+  computedSince      DateTime  @default(now()) @map("computed_since") @db.Timestamptz
+  lastResultAt       DateTime? @map("last_result_at") @db.Timestamptz
   version            Int       @default(1)
   deletedAt          DateTime? @map("deleted_at") @db.Timestamptz
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
@@ -94,6 +100,9 @@ model Service {
   project         Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
   configVersions  ServiceConfigVersion[]
   checkJobs       CheckJob[]
+  statusHistory   ServiceStatusHistory[]
+  overrides       StatusOverride[]
+  incidents       Incident[]
 
   @@index([projectId])
   @@index([enabled, deletedAt])
@@ -144,6 +153,7 @@ model CheckResult {
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   job CheckJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  statusChanges ServiceStatusHistory[]
 
   @@index([serviceId, checkedAt])
   @@map("check_results")
@@ -173,4 +183,83 @@ model SchedulerFailure {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   @@map("scheduler_failures")
+}
+
+// Week 3. The partial unique indexes (one active override and one active incident per service) and the CHECK
+// constraints live in the migration SQL, because Prisma cannot express them.
+
+model ServiceStatusHistory {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  serviceId        String   @map("service_id") @db.Uuid
+  status           String
+  computedStatus   String   @map("computed_status")
+  source           String
+  causedByResultId String?  @map("caused_by_result_id") @db.Uuid
+  startedAt        DateTime @default(now()) @map("started_at") @db.Timestamptz
+
+  service        Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  causedByResult CheckResult? @relation(fields: [causedByResultId], references: [id], onDelete: SetNull)
+
+  @@index([serviceId, startedAt])
+  @@map("service_status_history")
+}
+
+model StatusOverride {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  serviceId     String    @map("service_id") @db.Uuid
+  status        String
+  reason        String
+  actorUserId   String    @map("actor_user_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz
+  endedAt       DateTime? @map("ended_at") @db.Timestamptz
+  endedByUserId String?   @map("ended_by_user_id") @db.Uuid
+  endReason     String?   @map("end_reason")
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  actor   User    @relation("OverrideActor", fields: [actorUserId], references: [id])
+  endedBy User?   @relation("OverrideEnder", fields: [endedByUserId], references: [id])
+
+  @@map("status_overrides")
+}
+
+model Incident {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String    @map("project_id") @db.Uuid
+  serviceId        String    @map("service_id") @db.Uuid
+  title            String
+  status           String    @default("Investigating")
+  origin           String
+  isPublic         Boolean   @default(false) @map("is_public")
+  openedByUserId   String?   @map("opened_by_user_id") @db.Uuid
+  resolvedByUserId String?   @map("resolved_by_user_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz
+
+  project    Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  service    Service          @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  openedBy   User?            @relation("IncidentOpener", fields: [openedByUserId], references: [id])
+  resolvedBy User?            @relation("IncidentResolver", fields: [resolvedByUserId], references: [id])
+  updates    IncidentUpdate[]
+
+  @@index([projectId, createdAt])
+  @@index([serviceId, createdAt])
+  @@map("incidents")
+}
+
+model IncidentUpdate {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  incidentId  String   @map("incident_id") @db.Uuid
+  status      String
+  message     String
+  isPublic    Boolean  @default(false) @map("is_public")
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  actor    User?    @relation("IncidentUpdateActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([incidentId, createdAt])
+  @@map("incident_updates")
 }
