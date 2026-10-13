@@ -12,7 +12,7 @@ export interface ClaimedJob {
 
 /**
  * Insert one job per enabled service for the slot containing `now`.
- * Epoch-aligned scheduled_for + UNIQUE (service_id, scheduled_for) = exactly one job per slot.
+ * Epoch-aligned scheduled_for + UNIQUE (service_id, scheduled_for) → exactly one job per slot.
  */
 export async function enqueueJobs(
   pool: Pool | PoolClient,
@@ -89,18 +89,6 @@ export async function markJobDone(
     `UPDATE check_jobs SET status = 'done', lease_until = NULL WHERE id = $1`,
     [jobId],
   );
-}
-
-/** Lock a service row for status updates (FOR UPDATE). */
-export async function lockService(
-  client: PoolClient,
-  serviceId: string,
-): Promise<Record<string, unknown> | null> {
-  const result = await client.query(
-    `SELECT * FROM services WHERE id = $1 FOR UPDATE`,
-    [serviceId],
-  );
-  return result.rows[0] ?? null;
 }
 
 /** Run a tick: enqueue + skip stale. Used by the scheduler process. */
