@@ -9,6 +9,9 @@ import { checkServiceUrl } from "../core/url-safety";
 import { encryptSecret } from "../core/secrets";
 import { notFoundError, validationError } from "../errors";
 import { param } from "../http-params";
+import { systemClock } from "../core/clock";
+import { openIncidentIfNeeded } from "../db/incidents";
+import { lockService, refreshStatus } from "../db/service-status";
 
 const INTERVALS = [30, 60, 120, 300, 600, 900, 1800, 3600] as const;
 
@@ -239,13 +242,19 @@ export function serviceRoutes(prisma: PrismaClient, config: Config): Router {
         if (!service) return next(notFoundError());
 
         const updated = await prisma.$transaction(async (tx) => {
-          const s = await tx.service.update({
+          // Lock first, then change the flag and let the status writer decide what is shown (SP-02.9, SP-04.7).
+          const locked = await lockService(tx, service.id);
+          if (!locked) throw notFoundError();
+          await tx.service.update({
             where: { id: service.id },
-            data: {
-              enabled: false,
-              currentStatus: "Unknown",
-              statusSince: new Date(),
-            },
+            data: { enabled: false },
+          });
+          const now = systemClock.now();
+          await refreshStatus(tx, { ...locked, enabled: false }, now, {
+            at: now,
+          });
+          const s = await tx.service.findUniqueOrThrow({
+            where: { id: service.id },
           });
           await tx.auditLog.create({
             data: {
@@ -281,9 +290,22 @@ export function serviceRoutes(prisma: PrismaClient, config: Config): Router {
         if (!service) return next(notFoundError());
 
         const updated = await prisma.$transaction(async (tx) => {
-          const s = await tx.service.update({
+          const locked = await lockService(tx, service.id);
+          if (!locked) throw notFoundError();
+          await tx.service.update({
             where: { id: service.id },
             data: { enabled: true },
+          });
+          const now = systemClock.now();
+          const change = await refreshStatus(
+            tx,
+            { ...locked, enabled: true },
+            now,
+            { at: now },
+          );
+          await openIncidentIfNeeded(tx, service.id, change);
+          const s = await tx.service.findUniqueOrThrow({
+            where: { id: service.id },
           });
           await tx.auditLog.create({
             data: {
