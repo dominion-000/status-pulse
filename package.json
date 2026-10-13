@@ -15,6 +15,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:validate": "prisma validate",
     "seed": "node dist/scripts/seed.js",
     "start:api": "node dist/main.js",
     "start:scheduler": "node dist/scheduler/main.js",
