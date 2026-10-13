@@ -16,7 +16,10 @@ export interface SweepResult {
 }
 
 /** Services whose status may need to change because of time, not because a result arrived. */
-async function candidateServiceIds(prisma: PrismaClient, now: Date): Promise<string[]> {
+async function candidateServiceIds(
+  prisma: PrismaClient,
+  now: Date,
+): Promise<string[]> {
   const rows = await prisma.$queryRaw<{ id: string }[]>`
     SELECT s.id
       FROM services s
@@ -35,7 +38,11 @@ async function candidateServiceIds(prisma: PrismaClient, now: Date): Promise<str
   return rows.map((r) => r.id);
 }
 
-async function recordFailure(prisma: PrismaClient, serviceId: string, err: unknown): Promise<void> {
+async function recordFailure(
+  prisma: PrismaClient,
+  serviceId: string,
+  err: unknown,
+): Promise<void> {
   const message = err instanceof Error ? err.message : String(err);
   try {
     await prisma.$executeRaw`
@@ -46,13 +53,18 @@ async function recordFailure(prisma: PrismaClient, serviceId: string, err: unkno
   }
 }
 
-/**
- * One sweep. Safe to run as often as you like and from several schedulers at once: a second run sees the first
- * run's changes and does nothing. One failing service is recorded and does not stop the others.
- */
-export async function sweepStatus(prisma: PrismaClient, now: Date): Promise<SweepResult> {
+export async function sweepStatus(
+  prisma: PrismaClient,
+  now: Date,
+): Promise<SweepResult> {
   const ids = await candidateServiceIds(prisma, now);
-  const result: SweepResult = { examined: ids.length, statusChanges: 0, overridesEnded: 0, incidentsOpened: 0, failures: 0 };
+  const result: SweepResult = {
+    examined: ids.length,
+    statusChanges: 0,
+    overridesEnded: 0,
+    incidentsOpened: 0,
+    failures: 0,
+  };
 
   for (const id of ids) {
     try {
@@ -70,7 +82,8 @@ export async function sweepStatus(prisma: PrismaClient, now: Date): Promise<Swee
       });
       if (!outcome) continue;
       result.overridesEnded += outcome.ended;
-      if (outcome.change.displayedChanged || outcome.change.computedChanged) result.statusChanges += 1;
+      if (outcome.change.displayedChanged || outcome.change.computedChanged)
+        result.statusChanges += 1;
       if (outcome.incidentId) result.incidentsOpened += 1;
     } catch (err) {
       result.failures += 1;
