@@ -5,8 +5,8 @@ import pg from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../../prisma/generated";
 
-// Database tests run against a real PostgreSQL (use a separate Supabase project, never the real one):
-// they exercise unique indexes, CHECK constraints and cascades, which a mock cannot.
+// Database tests run against a real PostgreSQL:
+// they exercise unique indexes, CHECK constraints and cascades.
 // Each test file gets its own schema, built by applying the real prisma/migrations files in order.
 export const hasTestDb = Boolean(process.env.DATABASE_URL_TEST);
 
@@ -51,7 +51,6 @@ export async function createTestDb(): Promise<TestDb> {
   };
 }
 
-/** The Postgres error code of a failing statement, or null if it succeeded. 23505 unique, 23514 check, 23503 foreign key. */
 export async function errorCode(
   client: pg.Client,
   sql: string,
@@ -65,9 +64,9 @@ export async function errorCode(
   }
 }
 
-/** A Prisma client bound to the same isolated schema as `t`, for code that takes a PrismaClient. */
 export function prismaFor(t: TestDb): {
   prisma: PrismaClient;
+  pool: pg.Pool;
   close(): Promise<void>;
 } {
   const url = process.env.DATABASE_URL_TEST;
@@ -87,6 +86,7 @@ export function prismaFor(t: TestDb): {
   });
   return {
     prisma,
+    pool,
     async close() {
       await prisma.$disconnect();
       await pool.end();
