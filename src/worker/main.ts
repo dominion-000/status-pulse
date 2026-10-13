@@ -1,6 +1,7 @@
 import { loadConfig } from "../config";
 import { getPrisma, getPool, disconnectDb } from "../db/client";
 import { claimJob, markJobDone } from "../db/jobs";
+import { recordCheckResult } from "../db/record-result";
 import { systemClock } from "../core/clock";
 import { decryptSecret } from "../core/secrets";
 import { runHttpCheck } from "./http-check";
@@ -51,51 +52,28 @@ async function processOne(): Promise<boolean> {
   if (authorization !== undefined) checkInput.authorization = authorization;
   const outcome = await runHttpCheck(checkInput);
 
-  // Save result; unique on job_id prevents duplicates on retry (SP-03.3)
+  // One transaction saves the result, closes the job, recalculates the status and opens an incident if needed.
   try {
-    await prisma.$transaction(async (tx) => {
-      await tx.checkResult.create({
-        data: {
-          jobId: job.id,
-          serviceId: service.id,
-          statusCode: outcome.statusCode,
-          latencyMs: outcome.latencyMs,
-          passed: outcome.passed,
-          failureReason: outcome.failureReason,
-          configVersion: service.version,
-          checkedAt: systemClock.now(),
-        },
-      });
-      // Week 2: store result only; status evaluation (evaluate) is Week 3.
-      // Still surface a simple status so the API has something to show.
-      if (outcome.passed && service.currentStatus === "Unknown") {
-        await tx.service.update({
-          where: { id: service.id },
-          data: {
-            currentStatus: "Operational",
-            statusSince: systemClock.now(),
-          },
-        });
-      } else if (!outcome.passed && service.currentStatus === "Operational") {
-        // Do not jump to Outage without threshold logic (Week 3); leave as-is
-      }
-      await tx.$executeRawUnsafe(
-        `UPDATE check_jobs SET status = 'done', lease_until = NULL WHERE id = $1::uuid`,
-        job.id,
-      );
+    const recorded = await recordCheckResult(prisma, {
+      jobId: job.id,
+      serviceId: service.id,
+      configVersion: service.version,
+      outcome,
+      checkedAt: systemClock.now(),
     });
-  } catch (err: unknown) {
-    // Unique violation on job_id → another worker already wrote the result
-    const message = err instanceof Error ? err.message : String(err);
-    if (
-      message.includes("Unique constraint") ||
-      message.includes("duplicate key")
-    ) {
-      await markJobDone(pool, job.id);
-    } else {
-      console.error("worker save failed", job.id, err);
-      // Leave leased; lease expiry allows retry
+    const change = recorded.change;
+    if (change?.displayedChanged) {
+      console.log(
+        `status ${change.previousDisplayed} -> ${change.evaluation.displayed} (service ${service.id})`,
+      );
     }
+    if (recorded.incidentId)
+      console.log(
+        `incident opened ${recorded.incidentId} (service ${service.id})`,
+      );
+  } catch (err: unknown) {
+    // Nothing was written. The job stays leased and is retried when its lease expires, if its slot is still current.
+    console.error("worker save failed", job.id, err);
   }
 
   return true;
