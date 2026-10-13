@@ -2,7 +2,12 @@ import { randomBytes } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import pg from "pg";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "../../prisma/generated";
 
+// Database tests run against a real PostgreSQL (use a separate Supabase project, never the real one):
+// they exercise unique indexes, CHECK constraints and cascades, which a mock cannot.
+// Each test file gets its own schema, built by applying the real prisma/migrations files in order.
 export const hasTestDb = Boolean(process.env.DATABASE_URL_TEST);
 
 export interface TestDb {
@@ -58,4 +63,33 @@ export async function errorCode(
   } catch (err) {
     return (err as { code?: string }).code ?? "unknown";
   }
+}
+
+/** A Prisma client bound to the same isolated schema as `t`, for code that takes a PrismaClient. */
+export function prismaFor(t: TestDb): {
+  prisma: PrismaClient;
+  close(): Promise<void>;
+} {
+  const url = process.env.DATABASE_URL_TEST;
+  if (!url) throw new Error("DATABASE_URL_TEST is not set");
+  const local = /@(localhost|127\.0\.0\.1)(:|\/)/.test(url);
+  const pool = new pg.Pool({
+    connectionString: url,
+    max: 5,
+    ...(local ? {} : { ssl: { rejectUnauthorized: false } }),
+  });
+  pool.on(
+    "connect",
+    (c) => void c.query(`SET search_path TO ${pg.escapeIdentifier(t.schema)}`),
+  );
+  const prisma = new PrismaClient({
+    adapter: new PrismaPg(pool, { schema: t.schema }),
+  });
+  return {
+    prisma,
+    async close() {
+      await prisma.$disconnect();
+      await pool.end();
+    },
+  };
 }
