@@ -25,6 +25,12 @@ const inviteSchema = z.object({
   role: z.enum(["Responder", "Viewer"]),
 });
 
+const roleSchema = z.object({
+  role: z.enum(["Owner", "Responder", "Viewer"]),
+});
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function projectShape(p: {
   id: string;
   name: string;
@@ -164,6 +170,59 @@ export function projectRoutes(prisma: PrismaClient, config: Config): Router {
         res.status(201).json({
           member: { userId: user.id, email: user.email, role },
         });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
+  // Change a member's role (SP-01.4).
+  r.patch(
+    "/:projectId/members/:userId",
+    ...auth,
+    requireMembership(prisma, "Owner"),
+    validateBody(roleSchema),
+    async (req, res, next) => {
+      try {
+        const { role } = req.body as z.infer<typeof roleSchema>;
+        const projectId = param(req, "projectId");
+        const userId = param(req, "userId");
+        if (!UUID.test(userId)) return next(notFoundError());
+
+        const member = await prisma.$transaction(async (tx) => {
+          const rows = await tx.$queryRaw<{ user_id: string; role: string }[]>`
+            SELECT user_id, role FROM memberships
+             WHERE project_id = ${projectId}::uuid
+               FOR UPDATE`;
+          const target = rows.find((m) => m.user_id === userId);
+          if (!target) throw notFoundError("Member not found");
+          const user = await tx.user.findUniqueOrThrow({
+            where: { id: userId },
+            select: { email: true },
+          });
+          if (target.role === role) return { userId, email: user.email, role }; // nothing to change, nothing to audit
+
+          const owners = rows.filter((m) => m.role === "Owner").length;
+          if (target.role === "Owner" && owners <= 1)
+            throw conflictError("A project must keep at least one Owner");
+
+          await tx.membership.update({
+            where: { projectId_userId: { projectId, userId } },
+            data: { role },
+          });
+          await tx.auditLog.create({
+            data: {
+              projectId,
+              actorUserId: req.user!.id,
+              action: "member.role_changed",
+              entityType: "membership",
+              entityId: userId,
+              details: { from: target.role, to: role },
+            },
+          });
+          return { userId, email: user.email, role };
+        });
+        res.json({ member });
       } catch (err) {
         next(err);
       }
