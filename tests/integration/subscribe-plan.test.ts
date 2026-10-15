@@ -92,7 +92,7 @@ describe.skipIf(!hasTestDb)("subscribe, verify and plan upgrade", () => {
     const app = createApp({ config, prisma: p.prisma });
 
     const sub = await request(app)
-      .post(`/public/${slug}/subscribe`)
+      .post(`/api/v1/public/${slug}/subscribe`)
       .send({ email: "visitor@example.com", serviceIds: [publicServiceId] });
     expect(sub.status).toBe(201);
     expect(sub.body.subscriber.email).toBe("visitor@example.com");
@@ -108,7 +108,7 @@ describe.skipIf(!hasTestDb)("subscribe, verify and plan upgrade", () => {
     expect(outbox.rows).toHaveLength(1);
 
     const again = await request(app)
-      .post(`/public/${slug}/subscribe`)
+      .post(`/api/v1/public/${slug}/subscribe`)
       .send({ email: "visitor@example.com", serviceIds: [publicServiceId] });
     expect(again.status).toBe(201);
     const count = await t.client.query(
@@ -119,18 +119,18 @@ describe.skipIf(!hasTestDb)("subscribe, verify and plan upgrade", () => {
 
     const latestToken = again.body.verificationToken as string;
     const verified = await request(app)
-      .post("/public/subscriptions/verify")
+      .post("/api/v1/public/subscriptions/verify")
       .send({ token: latestToken });
     expect(verified.status).toBe(200);
     expect(verified.body.subscriber.verified).toBe(true);
 
     const reuse = await request(app)
-      .post("/public/subscriptions/verify")
+      .post("/api/v1/public/subscriptions/verify")
       .send({ token: latestToken });
     expect(reuse.status).toBe(410);
 
     const old = await request(app)
-      .post("/public/subscriptions/verify")
+      .post("/api/v1/public/subscriptions/verify")
       .send({ token });
     expect(old.status).toBe(410);
   });
@@ -138,7 +138,7 @@ describe.skipIf(!hasTestDb)("subscribe, verify and plan upgrade", () => {
   it("rejects subscribe to a private service", async () => {
     const app = createApp({ config, prisma: p.prisma });
     const res = await request(app)
-      .post(`/public/${slug}/subscribe`)
+      .post(`/api/v1/public/${slug}/subscribe`)
       .send({ email: "other@example.com", serviceIds: [privateServiceId] });
     expect(res.status).toBe(422);
   });
@@ -148,7 +148,7 @@ describe.skipIf(!hasTestDb)("subscribe, verify and plan upgrade", () => {
     const key = `key-${randomBytes(8).toString("hex")}`;
 
     const first = await request(app)
-      .post(`/projects/${projectId}/plan`)
+      .post(`/api/v1/projects/${projectId}/plan`)
       .set("Authorization", `Bearer ${ownerToken}`)
       .set("Idempotency-Key", key)
       .send({ planName: "pro" });
@@ -157,7 +157,7 @@ describe.skipIf(!hasTestDb)("subscribe, verify and plan upgrade", () => {
     expect(first.body.payment.status).toBe("succeeded");
 
     const replay = await request(app)
-      .post(`/projects/${projectId}/plan`)
+      .post(`/api/v1/projects/${projectId}/plan`)
       .set("Authorization", `Bearer ${ownerToken}`)
       .set("Idempotency-Key", key)
       .send({ planName: "pro" });
@@ -171,7 +171,7 @@ describe.skipIf(!hasTestDb)("subscribe, verify and plan upgrade", () => {
     expect(attempts.rows[0].n).toBe(1);
 
     const conflict = await request(app)
-      .post(`/projects/${projectId}/plan`)
+      .post(`/api/v1/projects/${projectId}/plan`)
       .set("Authorization", `Bearer ${ownerToken}`)
       .set("Idempotency-Key", key)
       .send({ planName: "free" });
@@ -187,7 +187,7 @@ describe.skipIf(!hasTestDb)("subscribe, verify and plan upgrade", () => {
     process.env.PAYMENT_FAIL_ALL = "1";
     const key = `fail-${randomBytes(8).toString("hex")}`;
     const res = await request(app)
-      .post(`/projects/${projectId}/plan`)
+      .post(`/api/v1/projects/${projectId}/plan`)
       .set("Authorization", `Bearer ${ownerToken}`)
       .set("Idempotency-Key", key)
       .send({ planName: "pro" });

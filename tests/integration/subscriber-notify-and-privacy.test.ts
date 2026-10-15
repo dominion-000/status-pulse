@@ -135,7 +135,7 @@ describe.skipIf(!hasTestDb)(
       const app = createApp({ config, prisma: p.prisma });
 
       const res = await request(app)
-        .post(`/projects/${projectId}/incidents/${incidentId}/updates`)
+        .post(`/api/v1/projects/${projectId}/incidents/${incidentId}/updates`)
         .set("Authorization", `Bearer ${ownerToken}`)
         .send({
           message: "We are investigating the outage",
@@ -163,7 +163,7 @@ describe.skipIf(!hasTestDb)(
 
       const app = createApp({ config, prisma: p.prisma });
       const res = await request(app)
-        .post(`/projects/${projectId}/incidents/${incidentId}/updates`)
+        .post(`/api/v1/projects/${projectId}/incidents/${incidentId}/updates`)
         .set("Authorization", `Bearer ${ownerToken}`)
         .send({
           message: "Internal: check rack 4",
@@ -219,7 +219,7 @@ describe.skipIf(!hasTestDb)(
 
     it("public page never leaks private service data or credentials", async () => {
       const app = createApp({ config, prisma: p.prisma });
-      const res = await request(app).get(`/public/${slug}`);
+      const res = await request(app).get(`/api/v1/public/${slug}`);
       expect(res.status).toBe(200);
       const body = JSON.stringify(res.body);
       expect(body).not.toContain("secret.internal");
@@ -269,7 +269,7 @@ describe.skipIf(!hasTestDb)(
 
       const app = createApp({ config, prisma: p.prisma });
       const retry = await request(app)
-        .post(`/projects/${projectId}/alerts/${aid}/retry`)
+        .post(`/api/v1/projects/${projectId}/alerts/${aid}/retry`)
         .set("Authorization", `Bearer ${ownerToken}`);
       expect(retry.status).toBe(200);
       expect(retry.body.reset).toBeGreaterThan(0);
@@ -307,7 +307,7 @@ describe.skipIf(!hasTestDb)(
       const key = `pay-${randomBytes(6).toString("hex")}`;
 
       const first = await request(app)
-        .post(`/projects/${projectId}/plan`)
+        .post(`/api/v1/projects/${projectId}/plan`)
         .set("Authorization", `Bearer ${ownerToken}`)
         .set("Idempotency-Key", key)
         .send({ planName: "pro" });
@@ -315,7 +315,7 @@ describe.skipIf(!hasTestDb)(
       expect(first.body.payment.status).toBe("succeeded");
 
       const second = await request(app)
-        .post(`/projects/${projectId}/plan`)
+        .post(`/api/v1/projects/${projectId}/plan`)
         .set("Authorization", `Bearer ${ownerToken}`)
         .set("Idempotency-Key", key)
         .send({ planName: "pro" });
