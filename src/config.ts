@@ -10,6 +10,8 @@ export interface Config {
   refreshTokenTtlDays: number;
   workerLeaseSeconds: number;
   workerMaxAttempts: number;
+  dispatcherLeaseSeconds: number;
+  dispatcherMaxAttempts: number;
   port: number;
 }
 
@@ -47,6 +49,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     refreshTokenTtlDays: intEnv("REFRESH_TOKEN_TTL_DAYS", 30),
     workerLeaseSeconds: intEnv("WORKER_LEASE_SECONDS", 60),
     workerMaxAttempts: intEnv("WORKER_MAX_ATTEMPTS", 5),
+    dispatcherLeaseSeconds: intEnv("DISPATCHER_LEASE_SECONDS", 30),
+    dispatcherMaxAttempts: intEnv("DISPATCHER_MAX_ATTEMPTS", 6),
     port: intEnv("PORT", 3000),
   };
 }

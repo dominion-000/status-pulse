@@ -22,3 +22,4 @@ function start(name: string, entry: string): void {
 start("api", "main.js");
 start("scheduler", "scheduler/main.js");
 start("worker", "worker/main.js");
+start("dispatcher", "dispatcher/main.js");
