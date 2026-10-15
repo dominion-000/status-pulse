@@ -1,0 +1,168 @@
+/* Catppuccin Mocha — minimal, readable UI */
+:root {
+  --base: #1e1e2e;
+  --mantle: #181825;
+  --crust: #11111b;
+  --surface0: #313244;
+  --surface1: #45475a;
+  --overlay0: #6c7086;
+  --text: #cdd6f4;
+  --subtext: #a6adc8;
+  --blue: #89b4fa;
+  --green: #a6e3a1;
+  --yellow: #f9e2af;
+  --red: #f38ba8;
+  --mauve: #cba6f7;
+  --peach: #fab387;
+  --sapphire: #74c7ec;
+  --radius: 8px;
+  --font: "IBM Plex Mono", "SF Mono", "Cascadia Code", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--crust);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100%;
+}
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.wrap {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+header.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0 1.25rem;
+  border-bottom: 1px solid var(--surface0);
+  margin-bottom: 1.5rem;
+}
+header .brand {
+  font-weight: 600;
+  color: var(--mauve);
+  letter-spacing: 0.02em;
+}
+header nav { display: flex; gap: 1rem; flex-wrap: wrap; }
+header nav a { color: var(--subtext); }
+header nav a:hover, header nav a.active { color: var(--text); }
+
+h1 { font-size: 1.35rem; font-weight: 600; margin: 0 0 0.75rem; }
+h2 { font-size: 1.1rem; font-weight: 600; margin: 1.5rem 0 0.5rem; color: var(--subtext); }
+p.muted { color: var(--subtext); }
+
+.card {
+  background: var(--base);
+  border: 1px solid var(--surface0);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  margin-bottom: 0.75rem;
+}
+.card + .card { margin-top: 0; }
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.badge-operational { background: color-mix(in srgb, var(--green) 20%, transparent); color: var(--green); }
+.badge-degraded { background: color-mix(in srgb, var(--yellow) 20%, transparent); color: var(--yellow); }
+.badge-outage { background: color-mix(in srgb, var(--red) 20%, transparent); color: var(--red); }
+.badge-unknown { background: color-mix(in srgb, var(--overlay0) 25%, transparent); color: var(--subtext); }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--surface0);
+}
+th { color: var(--subtext); font-weight: 500; font-size: 0.8rem; }
+
+label {
+  display: block;
+  color: var(--subtext);
+  margin-bottom: 0.25rem;
+  font-size: 0.85rem;
+}
+input, select, textarea, button {
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+input, select, textarea {
+  width: 100%;
+  max-width: 28rem;
+  background: var(--mantle);
+  color: var(--text);
+  border: 1px solid var(--surface1);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 0.75rem;
+}
+input:focus, select:focus, textarea:focus {
+  outline: 1px solid var(--blue);
+  border-color: var(--blue);
+}
+button, .btn {
+  display: inline-block;
+  background: var(--blue);
+  color: var(--crust);
+  border: none;
+  border-radius: var(--radius);
+  padding: 0.45rem 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.secondary, .btn.secondary {
+  background: var(--surface0);
+  color: var(--text);
+}
+button:hover, .btn:hover { filter: brightness(1.08); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.flash {
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+}
+.flash-error { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); }
+.flash-ok { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+
+.stack { display: flex; flex-direction: column; gap: 0.35rem; }
+.meta { color: var(--overlay0); font-size: 0.8rem; }
+
+.checks { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.75rem; }
+.checks label { display: flex; align-items: center; gap: 0.5rem; color: var(--text); }
+.checks input { width: auto; margin: 0; }
+
+footer.app-footer {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--surface0);
+  color: var(--overlay0);
+  font-size: 0.8rem;
+}

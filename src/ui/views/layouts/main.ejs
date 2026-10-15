@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title><%= typeof title !== 'undefined' ? title + ' · ' : '' %>Status Pulse</title>
+  <link rel="stylesheet" href="/ui/assets/styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="app-header">
+      <a class="brand" href="<%= typeof brandHref !== 'undefined' ? brandHref : '/' %>">Status Pulse</a>
+      <nav>
+        <% if (typeof nav !== 'undefined' && nav) { %>
+          <% nav.forEach(function (item) { %>
+            <a href="<%= item.href %>" class="<%= item.active ? 'active' : '' %>"><%= item.label %></a>
+          <% }) %>
+        <% } %>
+      </nav>
+    </header>
+
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="flash flash-error"><%= error %></div>
+    <% } %>
+    <% if (typeof success !== 'undefined' && success) { %>
+      <div class="flash flash-ok"><%= success %></div>
+    <% } %>
+
+    <main>
+      <%- body %>
+    </main>
+
+    <footer class="app-footer">Status Pulse · monitoring</footer>
+  </div>
+</body>
+</html>

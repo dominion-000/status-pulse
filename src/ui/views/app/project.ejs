@@ -1,0 +1,47 @@
+<h1><%= project.name %></h1>
+<p class="muted">
+  <code><%= project.slug %></code>
+  · plan <strong><%= plan.name %></strong>
+  · <a href="/status/<%= project.slug %>">public page</a>
+</p>
+
+<nav class="row" style="margin-bottom:1rem">
+  <a href="/app/projects/<%= project.id %>/alerts">Alerts</a>
+  <a href="/app/projects/<%= project.id %>/plan">Plan</a>
+  <a href="/app/projects">All projects</a>
+</nav>
+
+<h2>Services</h2>
+<% if (!services.length) { %>
+  <div class="card"><p class="muted">No services.</p></div>
+<% } %>
+<% services.forEach(function (s) { %>
+  <div class="card">
+    <div class="row">
+      <div>
+        <strong><%= s.name %></strong>
+        <span class="meta">
+          <% if (s.isPublic) { %>public<% } else { %>private<% } %>
+          <% if (!s.enabled) { %> · disabled<% } %>
+        </span>
+      </div>
+      <span class="badge badge-<%= s.currentStatus.toLowerCase() %>"><%= s.currentStatus %></span>
+    </div>
+  </div>
+<% }) %>
+
+<h2>Active incidents</h2>
+<% if (!incidents.length) { %>
+  <div class="card"><p class="muted">None open.</p></div>
+<% } %>
+<% incidents.forEach(function (i) { %>
+  <div class="card">
+    <div class="row">
+      <div>
+        <strong><%= i.title %></strong>
+        <span class="meta"> · <%= i.status %></span>
+      </div>
+      <span class="meta"><%= i.createdAt %></span>
+    </div>
+  </div>
+<% }) %>
