@@ -26,8 +26,11 @@ async function main(): Promise<void> {
 
   let project = await prisma.project.findUnique({ where: { slug: "demo" } });
   if (!project) {
+    const freePlan = await prisma.plan.findUniqueOrThrow({
+      where: { name: "free" },
+    });
     project = await prisma.project.create({
-      data: { name: "Demo Project", slug: "demo" },
+      data: { name: "Demo Project", slug: "demo", planId: freePlan.id },
     });
     await prisma.membership.create({
       data: { projectId: project.id, userId: user.id, role: "Owner" },

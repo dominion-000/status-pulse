@@ -59,8 +59,15 @@ export function projectRoutes(prisma: PrismaClient, config: Config): Router {
         const existing = await prisma.project.findUnique({ where: { slug } });
         if (existing) return next(conflictError("Slug already taken"));
 
+        const freePlan = await prisma.plan.findUnique({
+          where: { name: "free" },
+        });
+        if (!freePlan) return next(new Error("free plan is not seeded"));
+
         const project = await prisma.$transaction(async (tx) => {
-          const p = await tx.project.create({ data: { name, slug } });
+          const p = await tx.project.create({
+            data: { name, slug, planId: freePlan.id },
+          });
           await tx.membership.create({
             data: { projectId: p.id, userId: req.user!.id, role: "Owner" },
           });
