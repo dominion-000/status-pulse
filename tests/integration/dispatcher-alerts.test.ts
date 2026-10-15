@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app";
 import { signAccessToken } from "../../src/auth/tokens";
 import { loadConfig } from "../../src/config";
+import type { PoolClient } from "pg";
 import {
   claimOutboxMessage,
   markOutboxDelivered,
@@ -123,25 +124,30 @@ describe.skipIf(!hasTestDb)("dispatcher and alerts API", () => {
 
   it("delivers a message and leaves fail.example undelivered with backoff", async () => {
     // Use the test-schema client (search_path already set).
-    const pool = t.client;
+    const pool = t.client as PoolClient;
     const sender = createDefaultSender({ MAIL_FAIL_ALL: "0" });
 
-    const claimed = await claimOutboxMessage(pool, NOW, 30, 6);
-    expect(claimed).not.toBeNull();
-    expect(claimed!.recipient_email).toBe("owner@example.com");
-    expect(claimed!.attempts).toBe(1);
+    const first = await claimOutboxMessage(pool, NOW, 30, 6);
+    expect(first).not.toBeNull();
+    expect(first!.attempts).toBe(1);
 
-    await markOutboxDelivered(pool, claimed!.id, NOW);
+    const second = await claimOutboxMessage(pool, NOW, 30, 6);
+    expect(second).not.toBeNull();
+    expect(second!.attempts).toBe(1);
+
+    const emails = new Set([first!.recipient_email, second!.recipient_email]);
+    expect(emails).toEqual(new Set(["owner@example.com", "bad@fail.example"]));
+
+    const good = first!.recipient_email === "owner@example.com" ? first! : second!;
+    const failMsg = first!.recipient_email === "bad@fail.example" ? first! : second!;
+
+    await markOutboxDelivered(pool, good.id, NOW);
 
     const delivered = await t.client.query(
       `SELECT delivered_at FROM outbox_messages WHERE id = $1`,
-      [claimed!.id],
+      [good.id],
     );
     expect(delivered.rows[0].delivered_at).not.toBeNull();
-
-    const failMsg = await claimOutboxMessage(pool, NOW, 30, 6);
-    expect(failMsg).not.toBeNull();
-    expect(failMsg!.recipient_email).toBe("bad@fail.example");
 
     await expect(
       sender({
@@ -178,15 +184,21 @@ describe.skipIf(!hasTestDb)("dispatcher and alerts API", () => {
       throw new MailSendError("forced");
     };
 
+    // Isolate: mark any other pending messages as delivered so only msgId is claimable.
+    await t.client.query(
+      `UPDATE outbox_messages SET delivered_at = $1 WHERE id <> $2 AND delivered_at IS NULL`,
+      [NOW.toISOString(), msgId],
+    );
+
     let now = new Date(NOW.getTime());
     for (let i = 0; i < 6; i++) {
-      const did = await dispatcherTick(t.client, failingSender, now, 30, 6);
+      const did = await dispatcherTick(t.client as PoolClient, failingSender, now, 30, 6);
       expect(did).toBe(true);
       now = new Date(now.getTime() + 400_000);
     }
     expect(calls).toBe(6);
 
-    const did = await dispatcherTick(t.client, failingSender, now, 30, 6);
+    const did = await dispatcherTick(t.client as PoolClient, failingSender, now, 30, 6);
     expect(did).toBe(false);
     expect(calls).toBe(6);
 
@@ -197,7 +209,7 @@ describe.skipIf(!hasTestDb)("dispatcher and alerts API", () => {
     expect(row.rows[0].attempts).toBe(6);
     expect(row.rows[0].delivered_at).toBeNull();
 
-    await resetOutboxForRetry(t.client, msgId, now);
+    await resetOutboxForRetry(t.client as PoolClient, msgId, now);
     const after = await t.client.query(
       `SELECT attempts FROM outbox_messages WHERE id = $1`,
       [msgId],
