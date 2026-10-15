@@ -356,7 +356,25 @@ export function serviceRoutes(prisma: PrismaClient, config: Config): Router {
               details: { version, changed },
             },
           });
-          return { service, changed };
+          const change = await refreshStatus(
+            tx,
+            {
+              ...locked,
+              isPublic: merged.isPublic,
+              intervalSeconds: merged.intervalSeconds,
+              failThreshold: merged.failThreshold,
+              recoveryThreshold: merged.recoveryThreshold,
+              slowThreshold: merged.slowThreshold,
+              degradedMs: merged.degradedMs,
+            },
+            systemClock.now(),
+            { at: systemClock.now() },
+          );
+          await openIncidentIfNeeded(tx, serviceId, change);
+          const refreshed = await tx.service.findUniqueOrThrow({
+            where: { id: serviceId },
+          });
+          return { service: refreshed, changed };
         });
         res.json({
           service: serviceShape(result.service),
@@ -368,7 +386,7 @@ export function serviceRoutes(prisma: PrismaClient, config: Config): Router {
     },
   );
 
-  // Configuration history, Owner only.
+  // Configuration history. Owner only.
   r.get(
     "/:serviceId/versions",
     ...auth,

@@ -268,17 +268,104 @@ describe.skipIf(!hasTestDb)("editing a service (SP-02.4, SP-02.8)", () => {
     ).toEqual([]);
   });
 
-  it("leaves status, enabled flag and results alone", async () => {
+  // A service that looks healthy but already has `failures` failed results after its last transition, so only the
+  // thresholds decide whether it is an outage.
+  async function healthyWithFailures(failures: number) {
     const id = await newService();
     await t.client.query(
-      `UPDATE services SET current_status = 'Outage', computed_status = 'Outage', enabled = false WHERE id = $1`,
+      `UPDATE services SET current_status = 'Operational', computed_status = 'Operational',
+              computed_since = now() - interval '1 hour', status_since = now() - interval '1 hour', last_result_at = now()
+        WHERE id = $1`,
       [id],
     );
-    const res = await patch(id, "owner", { name: "still down" });
+    for (let i = 0; i < failures; i += 1) {
+      const job = (
+        await t.client.query(
+          `INSERT INTO check_jobs (service_id, scheduled_for, status) VALUES ($1, now() - ($2 || ' minutes')::interval, 'done') RETURNING id`,
+          [id, String(failures - i)],
+        )
+      ).rows[0].id as string;
+      await t.client.query(
+        `INSERT INTO check_results (job_id, service_id, passed, failure_reason, config_version, checked_at)
+         VALUES ($1, $2, false, 'timeout', 1, now() - ($3 || ' minutes')::interval)`,
+        [job, id, String(failures - i)],
+      );
+    }
+    return id;
+  }
+  const incidentsOf = async (id: string) =>
+    (
+      await t.client.query(
+        `SELECT origin, status FROM incidents WHERE service_id = $1`,
+        [id],
+      )
+    ).rows;
+  const historyOf = async (id: string) =>
+    (
+      await t.client.query(
+        `SELECT status, source FROM service_status_history WHERE service_id = $1`,
+        [id],
+      )
+    ).rows;
+
+  it("recalculates the status at once when a threshold change decides the outcome", async () => {
+    const id = await healthyWithFailures(2); // two failures, threshold 3: still Operational
+    const res = await patch(id, "owner", { failThreshold: 2 });
+    expect(res.status).toBe(200);
+    expect(res.body.service.currentStatus).toBe("Outage");
+    expect(await incidentsOf(id)).toEqual([
+      { origin: "auto", status: "Investigating" },
+    ]);
+    expect(await historyOf(id)).toHaveLength(1);
+  });
+
+  it("does not clear an outage when a threshold is raised", async () => {
+    const id = await healthyWithFailures(2);
+    await patch(id, "owner", { failThreshold: 2 });
+    const raised = await patch(id, "owner", { failThreshold: 5 });
+    expect(raised.body.service.currentStatus).toBe("Outage"); // an outage is left only by passing results
+    expect(await incidentsOf(id)).toHaveLength(1);
+  });
+
+  it("opens no incident while an override is active", async () => {
+    const id = await healthyWithFailures(2);
+    await t.client.query(
+      `INSERT INTO status_overrides (service_id, status, reason, actor_user_id, expires_at) VALUES ($1, 'Operational', 'maintenance', $2, now() + interval '1 hour')`,
+      [id, ids.owner],
+    );
+    const res = await patch(id, "owner", { failThreshold: 2 });
+    expect(res.status).toBe(200);
+    expect(res.body.service.currentStatus).toBe("Operational");
+    expect(await incidentsOf(id)).toHaveLength(0);
+    const computed = await t.client.query(
+      `SELECT computed_status FROM services WHERE id = $1`,
+      [id],
+    );
+    expect(computed.rows[0].computed_status).toBe("Outage");
+  });
+
+  it("leaves the status and history alone when the edit does not change the outcome", async () => {
+    const id = await healthyWithFailures(2);
+    const res = await patch(id, "owner", {
+      name: "renamed",
+      url: "https://example.org/health",
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.service.currentStatus).toBe("Operational");
+    expect(await historyOf(id)).toHaveLength(0);
+    expect(await incidentsOf(id)).toHaveLength(0);
+  });
+
+  it("keeps a disabled service disabled and Unknown", async () => {
+    const id = await newService();
+    await t.client.query(`UPDATE services SET enabled = false WHERE id = $1`, [
+      id,
+    ]);
+    const res = await patch(id, "owner", { name: "still off" });
     expect(res.status).toBe(200);
     expect(res.body.service).toMatchObject({
-      currentStatus: "Outage",
       enabled: false,
+      currentStatus: "Unknown",
     });
   });
 
