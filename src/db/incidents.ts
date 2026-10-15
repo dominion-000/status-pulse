@@ -1,5 +1,6 @@
 import { shouldOpenIncident } from "../core/incident";
 import type { StatusChange, Tx } from "./service-status";
+import { notifySubscribersOfPublicUpdate } from "./subscriber-notify";
 
 // Opening an incident is decided by core/incident.ts. This file does the writing, inside the transaction that
 // already holds the service row lock, so the worker, the sweeper and the API all behave the same way.
@@ -21,7 +22,35 @@ export async function openAutoIncident(
     ON CONFLICT (service_id) WHERE status <> 'Resolved' DO NOTHING
     RETURNING id`;
   const incidentId = rows[0]?.id ?? null;
-  if (incidentId) await createAlertForIncident(tx, incidentId);
+  if (incidentId) {
+    await createAlertForIncident(tx, incidentId);
+    // Public automatic open: notify verified subscribers (SP-HSD0).
+    const meta = await tx.$queryRaw<
+      {
+        project_id: string;
+        service_id: string;
+        service_name: string;
+        project_name: string;
+        is_public: boolean;
+      }[]
+    >`SELECT i.project_id, i.service_id, s.name AS service_name, p.name AS project_name, i.is_public
+        FROM incidents i
+        JOIN services s ON s.id = i.service_id
+        JOIN projects p ON p.id = i.project_id
+       WHERE i.id = ${incidentId}::uuid`;
+    const m = meta[0];
+    if (m?.is_public) {
+      await notifySubscribersOfPublicUpdate(tx, {
+        projectId: m.project_id,
+        serviceId: m.service_id,
+        serviceName: m.service_name,
+        projectName: m.project_name,
+        incidentTitle: `${m.service_name}: outage detected`,
+        message: `${m.service_name} in ${m.project_name} has entered Outage. An incident was opened automatically.`,
+        isPublicUpdate: true,
+      });
+    }
+  }
   return incidentId;
 }
 

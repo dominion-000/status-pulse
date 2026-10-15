@@ -12,6 +12,7 @@ import {
   type IncidentStatus,
 } from "../core/incident";
 import { lockService, type Tx } from "../db/service-status";
+import { notifySubscribersOfPublicUpdate } from "../db/subscriber-notify";
 import { conflictError, notFoundError, validationError } from "../errors";
 import { param } from "../http-params";
 import { loadUser, requireAuth } from "../middleware/auth";
@@ -296,6 +297,40 @@ export function incidentRoutes(prisma: PrismaClient, config: Config): Router {
               details: { from: locked.status, to: target },
             },
           });
+
+          // Notify verified subscribers when this update is public (SP-HSD0).
+          const meta = await tx.$queryRaw<
+            {
+              service_id: string;
+              service_name: string;
+              project_name: string;
+              incident_title: string;
+              incident_flag: boolean;
+              service_public: boolean;
+            }[]
+          >`SELECT i.service_id, s.name AS service_name, p.name AS project_name,
+                   i.title AS incident_title, i.is_public AS incident_flag, s.is_public AS service_public
+              FROM incidents i
+              JOIN services s ON s.id = i.service_id
+              JOIN projects p ON p.id = i.project_id
+             WHERE i.id = ${id}::uuid`;
+          const m = meta[0];
+          if (m) {
+            const publicUpdate = isUpdatePublic(
+              body.isPublic,
+              m.incident_flag,
+              m.service_public,
+            );
+            await notifySubscribersOfPublicUpdate(tx, {
+              projectId,
+              serviceId: m.service_id,
+              serviceName: m.service_name,
+              projectName: m.project_name,
+              incidentTitle: m.incident_title,
+              message: body.message,
+              isPublicUpdate: publicUpdate,
+            });
+          }
         });
 
         const incident = await load(projectId, id);
