@@ -10,6 +10,7 @@ import {
 } from "../auth/tokens";
 import { conflictError, unauthorizedError, validationError } from "../errors";
 import { validateBody } from "../middleware/validate";
+import { rateLimit, sharedAuthRateLimitStore } from "../middleware/rate-limit";
 
 const registerSchema = z.object({
   email: z.string().email().max(320),
@@ -45,78 +46,88 @@ function tokenPair(
 export function authRoutes(prisma: PrismaClient, config: Config): Router {
   const r = Router();
 
-  r.post("/register", validateBody(registerSchema), async (req, res, next) => {
-    try {
-      const { email, password, name } = req.body as z.infer<
-        typeof registerSchema
-      >;
-      const issues = passwordIssues(password);
-      if (issues.length) {
-        return next(
-          validationError(
-            "Invalid password",
-            issues.map((m) => ({ path: "password", message: m })),
-          ),
+  r.post(
+    "/register",
+    rateLimit({ name: "auth", store: sharedAuthRateLimitStore }),
+    validateBody(registerSchema),
+    async (req, res, next) => {
+      try {
+        const { email, password, name } = req.body as z.infer<
+          typeof registerSchema
+        >;
+        const issues = passwordIssues(password);
+        if (issues.length) {
+          return next(
+            validationError(
+              "Invalid password",
+              issues.map((m) => ({ path: "password", message: m })),
+            ),
+          );
+        }
+
+        const existing = await prisma.user.findUnique({
+          where: { email: email.toLowerCase() },
+        });
+        if (existing) return next(conflictError("Email already registered"));
+
+        const passwordHash = await hashPassword(password);
+        const user = await prisma.user.create({
+          data: {
+            email: email.toLowerCase(),
+            passwordHash,
+            name: name ?? null,
+          },
+        });
+
+        const { raw, hash } = generateRefreshToken();
+        const expiresAt = new Date(
+          Date.now() + config.refreshTokenTtlDays * 86400_000,
         );
+        await prisma.refreshToken.create({
+          data: { userId: user.id, tokenHash: hash, expiresAt },
+        });
+
+        res.status(201).json({
+          user: { id: user.id, email: user.email, name: user.name },
+          ...tokenPair(user.id, config, raw),
+        });
+      } catch (err) {
+        next(err);
       }
+    },
+  );
 
-      const existing = await prisma.user.findUnique({
-        where: { email: email.toLowerCase() },
-      });
-      if (existing) return next(conflictError("Email already registered"));
+  r.post(
+    "/login",
+    rateLimit({ name: "auth", store: sharedAuthRateLimitStore }),
+    validateBody(loginSchema),
+    async (req, res, next) => {
+      try {
+        const { email, password } = req.body as z.infer<typeof loginSchema>;
+        const user = await prisma.user.findUnique({
+          where: { email: email.toLowerCase() },
+        });
+        if (!user || !(await verifyPassword(password, user.passwordHash))) {
+          return next(unauthorizedError("Invalid email or password"));
+        }
 
-      const passwordHash = await hashPassword(password);
-      const user = await prisma.user.create({
-        data: {
-          email: email.toLowerCase(),
-          passwordHash,
-          name: name ?? null,
-        },
-      });
+        const { raw, hash } = generateRefreshToken();
+        const expiresAt = new Date(
+          Date.now() + config.refreshTokenTtlDays * 86400_000,
+        );
+        await prisma.refreshToken.create({
+          data: { userId: user.id, tokenHash: hash, expiresAt },
+        });
 
-      const { raw, hash } = generateRefreshToken();
-      const expiresAt = new Date(
-        Date.now() + config.refreshTokenTtlDays * 86400_000,
-      );
-      await prisma.refreshToken.create({
-        data: { userId: user.id, tokenHash: hash, expiresAt },
-      });
-
-      res.status(201).json({
-        user: { id: user.id, email: user.email, name: user.name },
-        ...tokenPair(user.id, config, raw),
-      });
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  r.post("/login", validateBody(loginSchema), async (req, res, next) => {
-    try {
-      const { email, password } = req.body as z.infer<typeof loginSchema>;
-      const user = await prisma.user.findUnique({
-        where: { email: email.toLowerCase() },
-      });
-      if (!user || !(await verifyPassword(password, user.passwordHash))) {
-        return next(unauthorizedError("Invalid email or password"));
+        res.json({
+          user: { id: user.id, email: user.email, name: user.name },
+          ...tokenPair(user.id, config, raw),
+        });
+      } catch (err) {
+        next(err);
       }
-
-      const { raw, hash } = generateRefreshToken();
-      const expiresAt = new Date(
-        Date.now() + config.refreshTokenTtlDays * 86400_000,
-      );
-      await prisma.refreshToken.create({
-        data: { userId: user.id, tokenHash: hash, expiresAt },
-      });
-
-      res.json({
-        user: { id: user.id, email: user.email, name: user.name },
-        ...tokenPair(user.id, config, raw),
-      });
-    } catch (err) {
-      next(err);
-    }
-  });
+    },
+  );
 
   r.post("/refresh", validateBody(refreshSchema), async (req, res, next) => {
     try {

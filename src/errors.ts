@@ -6,7 +6,8 @@ export type ErrorCode =
   | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "NOT_FOUND"
-  | "INTERNAL";
+  | "INTERNAL"
+  | "TOO_MANY_REQUESTS";
 
 export class AppError extends Error {
   readonly code: ErrorCode;
