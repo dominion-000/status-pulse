@@ -83,7 +83,7 @@ describe.skipIf(!hasTestDb)("incidents endpoints (SP-05)", () => {
 
   const as = (who: Who) => ({ Authorization: `Bearer ${token[who]}` });
   const url = (path = "", project = projectId) =>
-    `/projects/${project}/incidents${path}`;
+    `/api/v1/projects/${project}/incidents${path}`;
 
   async function newService(isPublic = true, project = projectId) {
     n += 1;

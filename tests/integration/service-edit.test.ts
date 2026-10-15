@@ -89,13 +89,13 @@ describe.skipIf(!hasTestDb)("editing a service (SP-02.4, SP-02.8)", () => {
 
   const as = (who: Who) => ({ Authorization: `Bearer ${token[who]}` });
   const base = (id: string, project = projectId) =>
-    `/projects/${project}/services/${id}`;
+    `/api/v1/projects/${project}/services/${id}`;
 
   // Services are made through the real create endpoint, so version 1 exists the way it does in production.
   async function newService(extra: object = {}, project = projectId) {
     n += 1;
     const res = await request(app)
-      .post(`/projects/${project}/services`)
+      .post(`/api/v1/projects/${project}/services`)
       .set(as("owner"))
       .send({
         name: `svc-${n}`,

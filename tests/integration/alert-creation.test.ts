@@ -191,7 +191,7 @@ describe.skipIf(!hasTestDb)(
       ).toBe(0);
 
       const res = await request(app)
-        .delete(`/projects/${projectId}/services/${svc}/override`)
+        .delete(`/api/v1/projects/${projectId}/services/${svc}/override`)
         .set({
           Authorization: `Bearer ${signAccessToken(ids.owner, SECRET, 900)}`,
         });
@@ -204,7 +204,7 @@ describe.skipIf(!hasTestDb)(
     it("creates no alert for an incident a responder opens by hand", async () => {
       const svc = await newService();
       const res = await request(app)
-        .post(`/projects/${projectId}/incidents`)
+        .post(`/api/v1/projects/${projectId}/incidents`)
         .set({
           Authorization: `Bearer ${signAccessToken(ids.responder, SECRET, 900)}`,
         })

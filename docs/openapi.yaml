@@ -8,6 +8,8 @@ info:
     A member whose role is too low receives 403. Roles are ordered Owner, Responder, Viewer. Errors use one envelope:
     an object with an `error` member holding `code`, `message` and, for validation failures, `details`.
 servers:
+  - url: /api/v1
+    description: Versioned JSON API
   - url: http://localhost:3000
 tags:
   - name: Health

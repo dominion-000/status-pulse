@@ -128,13 +128,13 @@ describe.skipIf(!hasTestDb)("public status page", () => {
   }, 60_000);
 
   afterAll(async () => {
-    await p.close();
-    await t.close();
+    if (p) await p.close();
+    if (t) await t.close();
   });
 
   it("returns only public enabled services and public incident data", async () => {
     const app = createApp({ config, prisma: p.prisma });
-    const res = await request(app).get(`/public/${slug}`);
+    const res = await request(app).get(`/api/v1/public/${slug}`);
 
     expect(res.status).toBe(200);
     expect(res.body.project).toEqual({ name: "Public Co", slug });
@@ -175,7 +175,7 @@ describe.skipIf(!hasTestDb)("public status page", () => {
 
   it("returns 404 for an unknown slug", async () => {
     const app = createApp({ config, prisma: p.prisma });
-    const res = await request(app).get("/public/does-not-exist");
+    const res = await request(app).get("/api/v1/public/does-not-exist");
     expect(res.status).toBe(404);
   });
 
@@ -183,7 +183,7 @@ describe.skipIf(!hasTestDb)("public status page", () => {
     // Add a second public service with no incident so the page still has content,
     // then confirm the private service's incident never leaks.
     const app = createApp({ config, prisma: p.prisma });
-    const res = await request(app).get(`/public/${slug}`);
+    const res = await request(app).get(`/api/v1/public/${slug}`);
     expect(res.status).toBe(200);
     const body = JSON.stringify(res.body);
     expect(body).not.toContain("Private outage");

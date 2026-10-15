@@ -81,7 +81,7 @@ describe.skipIf(!hasTestDb)("changing a member's role (SP-01.4)", () => {
     role: unknown,
   ) =>
     request(app)
-      .patch(`/projects/${project}/members/${target}`)
+      .patch(`/api/v1/projects/${project}/members/${target}`)
       .set({ Authorization: `Bearer ${signAccessToken(actor, SECRET, 900)}` })
       .send({ role });
   const roleOf = async (project: string, user: string) =>
@@ -120,7 +120,7 @@ describe.skipIf(!hasTestDb)("changing a member's role (SP-01.4)", () => {
     const { project, users } = await setup({ boss: "Owner", ann: "Responder" });
     const post = () =>
       request(app)
-        .post(`/projects/${project}/incidents`)
+        .post(`/api/v1/projects/${project}/incidents`)
         .set({
           Authorization: `Bearer ${signAccessToken(users.ann, SECRET, 900)}`,
         })
@@ -150,7 +150,7 @@ describe.skipIf(!hasTestDb)("changing a member's role (SP-01.4)", () => {
     ).toBe(404);
     expect(await roleOf(project, users.vic)).toBe("Viewer");
     const anon = await request(app)
-      .patch(`/projects/${project}/members/${users.vic}`)
+      .patch(`/api/v1/projects/${project}/members/${users.vic}`)
       .send({ role: "Viewer" });
     expect(anon.status).toBe(401);
   });

@@ -114,7 +114,7 @@ describe.skipIf(!hasTestDb)(
       ).rows[0].id;
     }
     const base = (s: string, projectOverride?: string) =>
-      `/projects/${projectOverride ?? projectId}/services/${s}`;
+      `/api/v1/projects/${projectOverride ?? projectId}/services/${s}`;
     const as = (who: keyof typeof token) => ({
       Authorization: `Bearer ${who === "owner" ? token.owner : token[who]}`,
     });
@@ -182,7 +182,7 @@ describe.skipIf(!hasTestDb)(
         expect(
           (
             await request(app)
-              .get(`/projects/${projectId}/services/${foreign}/status`)
+              .get(`/api/v1/projects/${projectId}/services/${foreign}/status`)
               .set(as("owner"))
           ).status,
         ).toBe(404);

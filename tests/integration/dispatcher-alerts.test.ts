@@ -118,8 +118,8 @@ describe.skipIf(!hasTestDb)("dispatcher and alerts API", () => {
   }, 60_000);
 
   afterAll(async () => {
-    await p.close();
-    await t.close();
+    if (p) await p.close();
+    if (t) await t.close();
   });
 
   it("delivers a message and leaves fail.example undelivered with backoff", async () => {
@@ -221,14 +221,14 @@ describe.skipIf(!hasTestDb)("dispatcher and alerts API", () => {
     const app = createApp({ config, prisma: p.prisma });
 
     const ok = await request(app)
-      .get(`/projects/${projectId}/alerts`)
+      .get(`/api/v1/projects/${projectId}/alerts`)
       .set("Authorization", `Bearer ${responderToken}`);
     expect(ok.status).toBe(200);
     expect(ok.body.alerts.length).toBeGreaterThanOrEqual(1);
     expect(ok.body.alerts[0]).toHaveProperty("messages");
 
     const denied = await request(app)
-      .get(`/projects/${projectId}/alerts`)
+      .get(`/api/v1/projects/${projectId}/alerts`)
       .set("Authorization", `Bearer ${viewerToken}`);
     expect(denied.status).toBe(403);
   });
@@ -237,13 +237,13 @@ describe.skipIf(!hasTestDb)("dispatcher and alerts API", () => {
     const app = createApp({ config, prisma: p.prisma });
 
     const first = await request(app)
-      .post(`/projects/${projectId}/alerts/${alertId}/acknowledge`)
+      .post(`/api/v1/projects/${projectId}/alerts/${alertId}/acknowledge`)
       .set("Authorization", `Bearer ${responderToken}`);
     expect(first.status).toBe(201);
     expect(first.body.acknowledgement.actorUserId).toBe(responderId);
 
     const second = await request(app)
-      .post(`/projects/${projectId}/alerts/${alertId}/acknowledge`)
+      .post(`/api/v1/projects/${projectId}/alerts/${alertId}/acknowledge`)
       .set("Authorization", `Bearer ${ownerToken}`);
     expect(second.status).toBe(200);
     expect(second.body.acknowledgement.actorUserId).toBe(responderId);
@@ -262,7 +262,7 @@ describe.skipIf(!hasTestDb)("dispatcher and alerts API", () => {
     expect(pending.rows[0].n).toBeGreaterThan(0);
 
     const res = await request(app)
-      .post(`/projects/${projectId}/alerts/${alertId}/retry`)
+      .post(`/api/v1/projects/${projectId}/alerts/${alertId}/retry`)
       .set("Authorization", `Bearer ${ownerToken}`);
     expect(res.status).toBe(200);
     expect(res.body.reset).toBeGreaterThan(0);
