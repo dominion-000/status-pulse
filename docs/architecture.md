@@ -47,12 +47,12 @@ prisma/          schema and migrations
 
 ## Processes
 
-| Process | Responsibility | Reason for a separate process |
-|---|---|---|
-| **API** | Registration, login, projects, services, results, incidents, alerts, public page | Serves users and stays responsive regardless of check activity |
-| **Scheduler** | Once a second, inserts one job per enabled service for the current interval slot. Also sweeps: marks stale jobs skipped, sets services with no recent result to Unknown, ends expired overrides | A tick loop with no other work |
-| **Worker** | Claims a job, calls the endpoint under a hard timeout, then saves the result, status, incident and alert in one transaction | A slow endpoint delays only one worker; more workers can be added to scale |
-| **Dispatcher** | Claims undelivered alerts from the outbox, sends them, retries failures with backoff | A failing mail provider cannot delay checks |
+| Process        | Responsibility                                                                                                                                                                                  | Reason for a separate process                                              |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **API**        | Registration, login, projects, services, results, incidents, alerts, public page                                                                                                                | Serves users and stays responsive regardless of check activity             |
+| **Scheduler**  | Once a second, inserts one job per enabled service for the current interval slot. Also sweeps: marks stale jobs skipped, sets services with no recent result to Unknown, ends expired overrides | A tick loop with no other work                                             |
+| **Worker**     | Claims a job, calls the endpoint under a hard timeout, then saves the result, status, incident and alert in one transaction                                                                     | A slow endpoint delays only one worker; more workers can be added to scale |
+| **Dispatcher** | Claims undelivered alerts from the outbox, sends them, retries failures with backoff                                                                                                            | A failing mail provider cannot delay checks                                |
 
 The shared test environment runs all four processes in a single Render web service, started by one launcher script.
 
@@ -74,11 +74,11 @@ Status is calculated when an event occurs, stored on the service, and recorded i
 
 A status changes in three kinds of moment. All three call one function, `evaluate`, which takes recent results, the active override and the current time and returns a status. The function performs no database access.
 
-| Moment | Handled by |
-|---|---|
-| A check result arrives | Worker |
-| The owner acts: override set or cancelled, service disabled or enabled, thresholds edited | API |
-| Time passes: no result for three intervals, override expiry | Sweeper in the scheduler |
+| Moment                                                                                    | Handled by               |
+| ----------------------------------------------------------------------------------------- | ------------------------ |
+| A check result arrives                                                                    | Worker                   |
+| The owner acts: override set or cancelled, service disabled or enabled, thresholds edited | API                      |
+| Time passes: no result for three intervals, override expiry                               | Sweeper in the scheduler |
 
 Each of them locks the service row before it decides, so two decisions cannot interleave.
 
@@ -99,8 +99,11 @@ stateDiagram-v2
 ```
 
 - **Thresholds belong to the service** and are set by its owner: consecutive failures for Outage, consecutive passes for recovery, a latency limit that defines a slow result, and the number of consecutive slow results that make Degraded.
+- **Recovery is earned with new results.** From Outage the status moves to Degraded and then to Operational, each step after the recovery threshold of consecutive passes counted from results recorded after the previous step. One slow but successful result directly after the failures counts as a pass, because the server may be starting up; a second slow result does not count and restarts the streak. From Degraded to Operational only fast passes count.
 - **Streaks restart whenever a service enters Unknown.** Only results recorded after the latest Unknown transition are counted, so no separate counter has to be kept consistent.
-- **An override replaces the displayed status** while it is active. Results are still recorded, but no new incident or alert is created, and an incident that is already open is unchanged.
+- **An override replaces the displayed status** while it is active. Only an owner sets one, with a reason of at least three characters and an expiry in the future within 30 days; one override is active per service. Results are still recorded and the computed status keeps following them underneath, but no new incident or alert is created, and an incident that is already open is unchanged. When the override is cancelled or expires, the computed status is shown again and may open an incident at that moment.
+- **A disabled service shows Unknown**, and this takes precedence over an override.
+- **Editing a service is an owner action.** A change to the thresholds, the latency limit, the interval or the visibility recalculates the status in the same transaction, under the same row lock. Every change that alters the configuration writes one configuration version.
 - **Downtime is not caught up.** A job is only run while its slot is current. Stale jobs are marked skipped, so a restarted worker runs one check and then follows the normal interval. A scheduler that was down never created the missed jobs, because it always computes the slot from the current time.
 
 ## Incident lifecycle
@@ -114,24 +117,32 @@ stateDiagram-v2
   Resolved --> [*]
 ```
 
-Transitions occur in this order only; any other transition returns 409. The system opens incidents but does not resolve them. An incident takes its service's visibility, and an incident on a private service is never public.
+Transitions occur in this order only; any other transition returns 409, including a repeat of the current status. The system opens incidents but does not resolve them; resolving is a responder action, and a resolved incident accepts no further updates.
+
+- **Opening.** An incident opens when the shown status turns into Outage while no override is active and no incident is active for the service. A resolved incident is not reopened while the service is still down; the next outage after a recovery opens a new one. A responder can also open one manually. One non-resolved incident exists per service, enforced by a partial unique index.
+- **Visibility is derived.** An incident is public only if its own flag and its service are both public. An incident on a private service is never public. The owner can hide an incident, and hiding is one-way: no endpoint makes a hidden incident public again.
+- **Updates.** Each update records its actor and time and is marked public or internal. An update appears on the status page only when it is marked public and its incident is public.
+- **Serialisation.** The incident row is locked while a status move or a hide is decided, so two responders cannot move the same incident at once.
 
 ## Concurrency guarantees
 
-| Guarantee | Mechanism | Verified by |
-|---|---|---|
-| One job per service per slot | Epoch-aligned slot and `UNIQUE (service_id, scheduled_for)` | Several schedulers tick at once: one row per slot |
-| A job is run by one worker | `FOR UPDATE SKIP LOCKED` with a lease | Many workers drain a queue: every job is claimed once |
-| A crashed worker's job is retried | Lease expiry | Claim, let the lease expire, claim again |
-| A retry creates no second result | `UNIQUE (job_id)` on results | Complete the same job twice: one result |
-| No catch-up after downtime | Only current-slot jobs are claimed; the sweeper skips stale ones | Twenty stale jobs queued: one check runs |
-| Status decisions do not interleave | Row lock on the service | Override and result arrive together: consistent outcome |
-| One incident per outage | Partial unique index: one non-resolved incident per service | Two workers fail the same service: one incident |
-| One alert per problem | `UNIQUE (service_id, incident_id, state)` | Repeated trigger: one alert |
-| An alert is never marked delivered falsely | `delivered_at` set only after a confirmed send | Forced send failure: still null and retryable |
-| A plan is charged once | `UNIQUE (project_id, idempotency_key)` | Same key twice: one activation |
-| Removed members lose access at once | Role read from the database on every request | Role changed: the next request is refused |
-| Private data stays private | Public routes read only public rows; row level security on every table | Private service absent from the public API |
+| Guarantee                                  | Mechanism                                                              | Verified by                                                             |
+| ------------------------------------------ | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| One job per service per slot               | Epoch-aligned slot and `UNIQUE (service_id, scheduled_for)`            | Several schedulers tick at once: one row per slot                       |
+| A job is run by one worker                 | `FOR UPDATE SKIP LOCKED` with a lease                                  | Many workers drain a queue: every job is claimed once                   |
+| A crashed worker's job is retried          | Lease expiry                                                           | Claim, let the lease expire, claim again                                |
+| A retry creates no second result           | `UNIQUE (job_id)` on results                                           | Complete the same job twice: one result                                 |
+| No catch-up after downtime                 | Only current-slot jobs are claimed; the sweeper skips stale ones       | Twenty stale jobs queued: one check runs                                |
+| Status decisions do not interleave         | Row lock on the service                                                | Override and result arrive together: consistent outcome                 |
+| One incident per outage                    | Partial unique index: one non-resolved incident per service            | Two workers fail the same service: one incident                         |
+| An incident moves one step at a time       | Row lock on the incident and a forward-only transition check           | Two responders send the same move: one succeeds, the other receives 409 |
+| A project keeps an owner                   | Lock on the project's membership rows while owners are counted         | Two owners demote each other: only one change is applied                |
+| Configuration versions have no gaps        | Row lock on the service and `UNIQUE (service_id, version)`             | Three simultaneous edits: versions 2, 3 and 4                           |
+| One alert per problem                      | `UNIQUE (service_id, incident_id, state)`                              | Repeated trigger: one alert                                             |
+| An alert is never marked delivered falsely | `delivered_at` set only after a confirmed send                         | Forced send failure: still null and retryable                           |
+| A plan is charged once                     | `UNIQUE (project_id, idempotency_key)`                                 | Same key twice: one activation                                          |
+| Removed members lose access at once        | Role read from the database on every request                           | Role changed: the next request is refused                               |
+| Private data stays private                 | Public routes read only public rows; row level security on every table | Private service absent from the public API                              |
 
 ## Security
 
@@ -145,17 +156,17 @@ Transitions occur in this order only; any other transition returns 409. The syst
 
 ## Stack
 
-| Component | Alternative considered | Reason |
-|---|---|---|
-| Node.js 22, TypeScript 6 compiled with `tsc` | TypeScript 7; esbuild-based runners | Compatible with the development machine (macOS 11) |
-| Express 5 and Zod | | Express 5 passes errors from async handlers to the error middleware; Zod provides one schema for validation and types |
-| PostgreSQL on Supabase, used only as a database | Supabase Auth and its client library | Authentication, permissions and privacy are core requirements and are implemented in this codebase |
-| Prisma 7.10.0 with `@prisma/adapter-pg` and `pg` 8.23.0 for the model, migrations and ordinary queries; raw SQL for the claim, the lock and the one-incident rule | Raw SQL only | Prisma cannot express row locks or partial unique indexes |
-| bcrypt 6 | scrypt, Argon2id | Listed by OWASP and widely understood |
-| PostgreSQL as the job queue | Redis, RabbitMQ | One fewer service to run, and constraints provide the guarantees; throughput is lower, which suits small teams |
-| Four separate processes | One process with timers | Multi-worker behaviour can be run and tested |
-| Status calculated on write | Calculated on every read | A change of status is an event, and reads stay cheap |
-| Role read from the database | Role stored in the token | A removed member loses access immediately |
-| Simulated email through an outbox table | Real email delivery | Out of scope, and it makes failures and retries demonstrable |
-| Vitest against a separate Supabase test project | Mocking the database | Concurrency tests need a real database |
-| Render web service | Other hosts | Deploys directly from the repository |
+| Component                                                                                                                                                         | Alternative considered               | Reason                                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| Node.js 22, TypeScript 6 compiled with `tsc`                                                                                                                      | TypeScript 7; esbuild-based runners  | Compatible with the development machine                                                                               |
+| Express 5 and Zod                                                                                                                                                 |                                      | Express 5 passes errors from async handlers to the error middleware; Zod provides one schema for validation and types |
+| PostgreSQL on Supabase, used only as a database                                                                                                                   | Supabase Auth and its client library | Authentication, permissions and privacy are core requirements and are implemented in this codebase                    |
+| Prisma 7.10.0 with `@prisma/adapter-pg` and `pg` 8.23.0 for the model, migrations and ordinary queries; raw SQL for the claim, the lock and the one-incident rule | Raw SQL only                         | Prisma cannot express row locks or partial unique indexes                                                             |
+| bcrypt 6                                                                                                                                                          | scrypt, Argon2id                     | Listed by OWASP and widely understood                                                                                 |
+| PostgreSQL as the job queue                                                                                                                                       | Redis, RabbitMQ                      | One fewer service to run, and constraints provide the guarantees; throughput is lower, which suits small teams        |
+| Four separate processes                                                                                                                                           | One process with timers              | Multi-worker behaviour can be run and tested                                                                          |
+| Status calculated on write                                                                                                                                        | Calculated on every read             | A change of status is an event, and reads stay cheap                                                                  |
+| Role read from the database                                                                                                                                       | Role stored in the token             | A removed member loses access immediately                                                                             |
+| Simulated email through an outbox table                                                                                                                           | Real email delivery                  | Out of scope, and it makes failures and retries demonstrable                                                          |
+| Vitest against a separate Supabase test project                                                                                                                   | Mocking the database                 | Concurrency tests need a real database                                                                                |
+| Render web service                                                                                                                                                | Other hosts                          | Deploys directly from the repository                                                                                  |

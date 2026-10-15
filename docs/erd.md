@@ -42,8 +42,30 @@ erDiagram
     bool is_public
     bytea credentials_enc
     text current_status
+    text computed_status
     timestamptz status_since
+    timestamptz computed_since
+    timestamptz last_result_at
     int version
+  }
+  service_status_history {
+    uuid id PK
+    uuid service_id FK
+    text status
+    text computed_status
+    text source
+    uuid caused_by_result_id FK
+    timestamptz started_at
+  }
+  status_overrides {
+    uuid id PK
+    uuid service_id FK
+    text status
+    text reason
+    uuid actor_user_id FK
+    timestamptz expires_at
+    timestamptz ended_at
+    text end_reason
   }
   check_jobs {
     uuid id PK
@@ -65,10 +87,24 @@ erDiagram
   }
   incidents {
     uuid id PK
+    uuid project_id FK
     uuid service_id FK
+    text title
     text status
     text origin
     bool is_public
+    uuid opened_by_user_id FK
+    uuid resolved_by_user_id FK
+    timestamptz resolved_at
+  }
+  incident_updates {
+    uuid id PK
+    uuid incident_id FK
+    text status
+    text message
+    bool is_public
+    uuid actor_user_id FK
+    timestamptz created_at
   }
   alerts {
     uuid id PK
@@ -98,6 +134,10 @@ erDiagram
 | Alerts | `alerts`, `outbox_messages`, `acknowledgements` | 4 |
 | Public pages and plans | `subscribers`, `subscriber_services`, `plans`, `payment_attempts` | 4 |
 
+`services` keeps two statuses. `current_status` is the one shown, which is the override while one is active. `computed_status` is derived from results and continues underneath an override. `computed_since` marks the latest transition of the computed status: only results recorded after it count towards a streak, so each recovery step is earned with new results. `last_result_at` supports the rule that three intervals without a result give `Unknown`. `service_status_history` records every change of either status with its source (`computed` from a result, `stale` after three intervals without one, `disabled`, or `override`), and `check_results` stays untouched by status decisions.
+
+`incidents.is_public` is the incident's own flag, set from its service when the incident opens and cleared by the owner when the incident is hidden. Whether an incident or an update is public is derived from this flag together with the service's `is_public`; it is not stored. `incident_updates.is_public` is the author's choice for one update.
+
 `outbox_messages` holds every simulated email: alerts, subscription verification and subscriber notifications. `check_results` stores `passed` and `latency_ms`; whether a result is slow is derived from the latency and the service's latency limit when the result is evaluated.
 
 ## Threshold defaults
@@ -116,6 +156,7 @@ erDiagram
 | One job per service per slot | `UNIQUE (service_id, scheduled_for)` on `check_jobs` | Prisma schema |
 | One result per job | `UNIQUE (job_id)` on `check_results` | Prisma schema |
 | One active incident per service | `CREATE UNIQUE INDEX ... ON incidents (service_id) WHERE status <> 'Resolved'` | Migration SQL |
+| One active override per service | `CREATE UNIQUE INDEX ... ON status_overrides (service_id) WHERE ended_at IS NULL` | Migration SQL |
 | One alert per service, incident and state | `UNIQUE (service_id, incident_id, state)` on `alerts` | Prisma schema |
 | One acknowledgement per alert | `UNIQUE (alert_id)` on `acknowledgements` | Prisma schema |
 | One subscription per email and project | `UNIQUE (project_id, email)` on `subscribers` | Prisma schema |
