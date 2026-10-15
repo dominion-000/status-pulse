@@ -96,6 +96,10 @@ function mountApi(app: express.Express, deps: Required<Pick<AppDeps, "config" | 
 export function createApp(deps: AppDeps = {}) {
   const app = express();
   app.disable("x-powered-by");
+  // Behind Render's proxy set TRUST_PROXY_HOPS=1 so req.ip is the real client. The default trusts nothing, because
+  // trusting a proxy that is not there would let a client choose its own address.
+  const hops = Number(process.env.TRUST_PROXY_HOPS ?? 0);
+  if (Number.isInteger(hops) && hops > 0) app.set("trust proxy", hops);
   app.use(createRequestLogger(deps.logStream));
   app.use(express.json({ limit: "100kb" }));
   app.use(express.urlencoded({ extended: false, limit: "100kb" }));

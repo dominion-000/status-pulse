@@ -7,7 +7,16 @@ import {
   isUpdatePublic,
   type IncidentStatus,
 } from "../core/incident";
-import { createVerificationToken, hashToken } from "../core/tokens";
+import {
+  createVerificationToken,
+  exposeVerificationToken,
+  hashToken,
+} from "../core/tokens";
+import { upgradePlan } from "../db/plans";
+import {
+  rateLimit,
+  sharedAuthRateLimitStore,
+} from "../middleware/rate-limit";
 import { systemClock } from "../core/clock";
 import { hashPassword, verifyPassword } from "../core/password";
 import { signAccessToken } from "../auth/tokens";
@@ -38,6 +47,16 @@ function parseBody(req: { body?: unknown }): Record<string, unknown> {
 /**
  * Browser UI routes (EJS). API remains JSON under /auth, /projects, /public.
  */
+// The browser forms share the API's limit: they reach the same accounts and the same subscribe endpoint.
+const uiLimit = rateLimit({ name: "auth", store: sharedAuthRateLimitStore });
+
+// Fixed messages for the redirect codes, so a crafted link cannot put its own text on the page.
+const PLAN_ERRORS: Record<string, string> = {
+  payment_failed: "The payment failed. The plan is unchanged.",
+  key_conflict: "That Idempotency-Key was already used for a different plan.",
+  unknown_plan: "Unknown plan.",
+};
+
 export function uiRoutes(prisma: PrismaClient, config: Config): Router {
   const r = Router();
 
@@ -87,12 +106,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
               statusHistory: {
                 orderBy: { startedAt: "desc" },
                 take: 20,
-                select: {
-                  status: true,
-                  computedStatus: true,
-                  source: true,
-                  startedAt: true,
-                },
+                select: { status: true, startedAt: true },
               },
             },
           },
@@ -137,7 +151,6 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
             : null,
           recentHistory: s.statusHistory.map((h) => ({
             status: h.status,
-            source: h.source,
             startedAt: h.startedAt.toISOString(),
           })),
         };
@@ -192,7 +205,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     }
   });
 
-  r.post("/status/:slug/subscribe", async (req, res, next) => {
+  r.post("/status/:slug/subscribe", uiLimit, async (req, res, next) => {
     try {
       const slug = String(req.params.slug);
       const body = parseBody(req);
@@ -319,7 +332,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
         project,
         services: publicServices,
         done: true,
-        verificationToken: raw,
+        verificationToken: exposeVerificationToken() ? raw : undefined,
         brandHref: `/status/${slug}`,
         nav: publicNav(slug),
       });
@@ -366,18 +379,31 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
           nav: [],
         }, 410);
       }
-      const updated = await prisma.subscriber.update({
-        where: { id: subscriber.id },
+      const claimed = await prisma.subscriber.updateMany({
+        where: {
+          id: subscriber.id,
+          verificationTokenHash: hash,
+          verifiedAt: null,
+          verificationExpiresAt: { gte: now },
+        },
         data: {
           verifiedAt: now,
           verificationTokenHash: null,
           verificationExpiresAt: null,
         },
       });
+      if (claimed.count !== 1) {
+        return renderPage(res, "public/verify", {
+          title: "Verify",
+          error: "Token is invalid or already used",
+          brandHref: "/",
+          nav: [],
+        }, 410);
+      }
       renderPage(res, "public/verify", {
         title: "Verify",
         verified: true,
-        email: updated.email,
+        email: subscriber.email,
         brandHref: "/",
         nav: [],
       });
@@ -397,7 +423,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     });
   });
 
-  r.post("/app/login", async (req, res, next) => {
+  r.post("/app/login", uiLimit, async (req, res, next) => {
     try {
       const body = parseBody(req);
       const email = String(body.email ?? "").trim().toLowerCase();
@@ -434,7 +460,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     });
   });
 
-  r.post("/app/register", async (req, res, next) => {
+  r.post("/app/register", uiLimit, async (req, res, next) => {
     try {
       const body = parseBody(req);
       const email = String(body.email ?? "").trim().toLowerCase();
@@ -740,7 +766,11 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
         defaultKey: `ui-${randomBytes(8).toString("hex")}`,
         brandHref: "/app",
         nav: appNav("projects"),
-        error: membership.role !== "Owner" ? "Only owners can change the plan" : undefined,
+        error:
+          membership.role !== "Owner"
+            ? "Only owners can change the plan"
+            : PLAN_ERRORS[String(req.query.error ?? "")],
+        success: req.query.success === "1" ? "Plan updated" : undefined,
       });
     } catch (err) {
       next(err);
@@ -763,35 +793,18 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
       const body = parseBody(req);
       const planName = String(body.planName ?? "pro");
       const key = String(body.idempotencyKey ?? randomBytes(8).toString("hex"));
-      const target = await prisma.plan.findUnique({ where: { name: planName } });
-      if (!target) return res.redirect(`/app/projects/${projectId}/plan`);
-
-      const existing = await prisma.paymentAttempt.findUnique({
-        where: {
-          projectId_idempotencyKey: {
-            projectId,
-            idempotencyKey: key,
-          },
-        },
+      const outcome = await upgradePlan(prisma, {
+        projectId,
+        actorUserId: user.id,
+        planName,
+        key,
+        failPayments:
+          process.env.PAYMENT_FAIL_ALL === "1" ||
+          process.env.PAYMENT_FAIL_ALL === "true",
       });
-      if (!existing) {
-        await prisma.$transaction(async (tx) => {
-          await tx.paymentAttempt.create({
-            data: {
-              projectId,
-              planId: target.id,
-              idempotencyKey: key,
-              status: "succeeded",
-              amountCents: target.priceCents,
-            },
-          });
-          await tx.project.update({
-            where: { id: projectId },
-            data: { planId: target.id },
-          });
-        });
-      }
-      res.redirect(`/app/projects/${projectId}/plan`);
+      const code =
+        outcome.kind === "ok" ? "success=1" : `error=${outcome.kind}`;
+      return res.redirect(`/app/projects/${projectId}/plan?${code}`);
     } catch (err) {
       next(err);
     }

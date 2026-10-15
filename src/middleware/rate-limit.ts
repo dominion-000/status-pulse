@@ -43,12 +43,9 @@ export function rateLimit(options: {
   const store = options.store ?? defaultStore;
 
   return (req, _res, next) => {
-    const ip =
-      (typeof req.headers["x-forwarded-for"] === "string"
-        ? req.headers["x-forwarded-for"].split(",")[0]?.trim()
-        : undefined) ||
-      req.socket.remoteAddress ||
-      "unknown";
+    // req.ip, not the X-Forwarded-For header: the first entry of that header is written by the client, so keying on
+    // it lets anyone dodge the limit by changing it. Behind a proxy, set TRUST_PROXY_HOPS (see app.ts).
+    const ip = req.ip || req.socket.remoteAddress || "unknown";
     const key = `${name}:${ip}`;
     const count = store.hit(key, windowMs);
     if (count > limit) {

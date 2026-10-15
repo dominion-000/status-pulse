@@ -12,7 +12,12 @@ function parseCookies(header: string | undefined): Record<string, string> {
     if (i < 0) continue;
     const k = part.slice(0, i).trim();
     const v = part.slice(i + 1).trim();
-    if (k) out[k] = decodeURIComponent(v);
+    if (!k) continue;
+    try {
+      out[k] = decodeURIComponent(v);
+    } catch {
+      // A malformed value (for example a lone "%") is ignored instead of failing the request.
+    }
   }
   return out;
 }
@@ -25,13 +30,16 @@ export function setTokenCookie(res: Response, token: string, maxAgeSec: number):
     "SameSite=Lax",
     `Max-Age=${maxAgeSec}`,
   ];
+  if (process.env.NODE_ENV === "production") parts.push("Secure");
   res.setHeader("Set-Cookie", parts.join("; "));
 }
 
 export function clearTokenCookie(res: Response): void {
   res.setHeader(
     "Set-Cookie",
-    `${TOKEN_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
+    `${TOKEN_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${
+      process.env.NODE_ENV === "production" ? "; Secure" : ""
+    }`,
   );
 }
 

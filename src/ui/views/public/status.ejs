@@ -31,12 +31,11 @@
     <% if (s.recentHistory && s.recentHistory.length) { %>
       <h2>Recent history</h2>
       <table>
-        <thead><tr><th>Status</th><th>Source</th><th>Started</th></tr></thead>
+        <thead><tr><th>Status</th><th>Started</th></tr></thead>
         <tbody>
           <% s.recentHistory.forEach(function (h) { %>
             <tr>
               <td><span class="badge badge-<%= h.status.toLowerCase() %>"><%= h.status %></span></td>
-              <td><%= h.source %></td>
               <td class="meta"><%= h.startedAt %></td>
             </tr>
           <% }) %>

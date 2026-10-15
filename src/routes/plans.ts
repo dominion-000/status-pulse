@@ -4,6 +4,7 @@ import type { PrismaClient } from "../../prisma/generated";
 import type { Config } from "../config";
 import { conflictError, notFoundError, validationError } from "../errors";
 import { param } from "../http-params";
+import { upgradePlan } from "../db/plans";
 import { loadUser, requireAuth } from "../middleware/auth";
 import { requireMembership } from "../middleware/permissions";
 import { validateBody } from "../middleware/validate";
@@ -76,122 +77,34 @@ export function planRoutes(prisma: PrismaClient, config: Config): Router {
             ),
           );
         }
-        const key = idempotencyKey.trim();
-
-        const target = await prisma.plan.findUnique({
-          where: { name: planName },
+        const outcome = await upgradePlan(prisma, {
+          projectId,
+          actorUserId: req.user!.id,
+          planName,
+          key: idempotencyKey.trim(),
+          failPayments:
+            process.env.PAYMENT_FAIL_ALL === "1" ||
+            process.env.PAYMENT_FAIL_ALL === "true",
         });
-        if (!target) return next(notFoundError("Plan not found"));
-
-        const project = await prisma.project.findUnique({
-          where: { id: projectId },
-          include: { plan: true },
-        });
-        if (!project) return next(notFoundError());
-
-        const existing = await prisma.paymentAttempt.findUnique({
-          where: {
-            projectId_idempotencyKey: { projectId, idempotencyKey: key },
-          },
-          include: { plan: true },
-        });
-
-        if (existing) {
-          if (existing.planId !== target.id) {
+        switch (outcome.kind) {
+          case "unknown_plan":
+            return next(notFoundError("Plan not found"));
+          case "key_conflict":
             return res.status(422).json({
               error: {
                 code: "IDEMPOTENCY_CONFLICT",
-                message:
-                  "Idempotency-Key was already used with a different plan",
+                message: "Idempotency-Key was already used with a different plan",
               },
             });
-          }
-          if (existing.status === "succeeded") {
-            res.json({
-              plan: {
-                name: existing.plan.name,
-                maxServices: existing.plan.maxServices,
-                maxMembers: existing.plan.maxMembers,
-                priceCents: existing.plan.priceCents,
-              },
-              payment: {
-                id: existing.id,
-                status: existing.status,
-                amountCents: existing.amountCents,
-              },
+          case "payment_failed":
+            return next(conflictError(outcome.message));
+          case "ok":
+            res.status(outcome.replayed ? 200 : 201).json({
+              plan: outcome.plan,
+              payment: outcome.payment,
             });
             return;
-          }
-          return next(
-            conflictError(
-              existing.errorMessage ?? "Previous payment attempt failed",
-            ),
-          );
         }
-
-        const failAll =
-          process.env.PAYMENT_FAIL_ALL === "1" ||
-          process.env.PAYMENT_FAIL_ALL === "true";
-        const amount = target.priceCents;
-
-        if (failAll) {
-          await prisma.paymentAttempt.create({
-            data: {
-              projectId,
-              planId: target.id,
-              idempotencyKey: key,
-              status: "failed",
-              amountCents: amount,
-              errorMessage: "PAYMENT_FAIL_ALL is set",
-            },
-          });
-          return next(conflictError("Simulated payment failed"));
-        }
-
-        const attempt = await prisma.$transaction(async (tx) => {
-          const payment = await tx.paymentAttempt.create({
-            data: {
-              projectId,
-              planId: target.id,
-              idempotencyKey: key,
-              status: "succeeded",
-              amountCents: amount,
-            },
-          });
-          await tx.project.update({
-            where: { id: projectId },
-            data: { planId: target.id },
-          });
-          await tx.auditLog.create({
-            data: {
-              projectId,
-              actorUserId: req.user!.id,
-              action: "plan.upgraded",
-              entityType: "project",
-              entityId: projectId,
-              details: {
-                from: project.plan.name,
-                to: target.name,
-                paymentId: payment.id,
-              },
-            },
-          });
-          return payment;
-        });
-
-        res.status(201).json({
-          plan: {
-            name: target.name,
-            maxServices: target.maxServices,
-            maxMembers: target.maxMembers,
-            priceCents: target.priceCents,
-          },
-          payment: {
-            id: attempt.id,
-            status: attempt.status,
-            amountCents: attempt.amountCents,
-          },
-        });
       } catch (err) {
         next(err);
       }

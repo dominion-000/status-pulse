@@ -6,7 +6,11 @@ import {
   isUpdatePublic,
   type IncidentStatus,
 } from "../core/incident";
-import { createVerificationToken, hashToken } from "../core/tokens";
+import {
+  createVerificationToken,
+  exposeVerificationToken,
+  hashToken,
+} from "../core/tokens";
 import { systemClock } from "../core/clock";
 import { notFoundError, validationError } from "../errors";
 import { param } from "../http-params";
@@ -78,12 +82,7 @@ export function publicRoutes(prisma: PrismaClient): Router {
               statusHistory: {
                 orderBy: { startedAt: "desc" },
                 take: HISTORY_LIMIT,
-                select: {
-                  status: true,
-                  computedStatus: true,
-                  source: true,
-                  startedAt: true,
-                },
+                select: { status: true, startedAt: true },
               },
             },
           },
@@ -124,10 +123,9 @@ export function publicRoutes(prisma: PrismaClient): Router {
                     })),
                 }
               : null,
+            // Only the shown status. The computed status and the source would reveal what an override hides.
             recentHistory: s.statusHistory.map((h) => ({
               status: h.status,
-              computedStatus: h.computedStatus,
-              source: h.source,
               startedAt: h.startedAt.toISOString(),
             })),
           };
@@ -145,9 +143,11 @@ export function publicRoutes(prisma: PrismaClient): Router {
     async (req, res, next) => {
       try {
         const slug = param(req, "projectSlug");
-        const { email, serviceIds } = req.body as z.infer<
+        const { email: rawEmail, serviceIds } = req.body as z.infer<
           typeof subscribeSchema
         >;
+        // One subscriber per address, whatever the letter case: "A@x.io" and "a@x.io" are the same mailbox.
+        const email = rawEmail.trim().toLowerCase();
         const now = systemClock.now();
         const project = await prisma.project.findUnique({
           where: { slug },
@@ -266,7 +266,10 @@ export function publicRoutes(prisma: PrismaClient): Router {
             email: result.subscriber.email,
             verified: result.subscriber.verifiedAt != null,
           },
-          ...(result.token ? { verificationToken: result.token } : {}),
+          // The token proves the caller reads that mailbox, so it is not returned in production (core/tokens.ts).
+          ...(result.token && exposeVerificationToken()
+            ? { verificationToken: result.token }
+            : {}),
         });
       } catch (err) {
         next(err);
@@ -298,18 +301,33 @@ export function publicRoutes(prisma: PrismaClient): Router {
             },
           });
         }
-        const updated = await prisma.subscriber.update({
-          where: { id: subscriber.id },
+        // The token is single-use: the update applies only while it is still unused, so of two simultaneous
+        // requests with the same token exactly one succeeds.
+        const claimed = await prisma.subscriber.updateMany({
+          where: {
+            id: subscriber.id,
+            verificationTokenHash: hash,
+            verifiedAt: null,
+            verificationExpiresAt: { gte: now },
+          },
           data: {
             verifiedAt: now,
             verificationTokenHash: null,
             verificationExpiresAt: null,
           },
         });
+        if (claimed.count !== 1) {
+          return res.status(410).json({
+            error: {
+              code: "GONE",
+              message: "Verification token is invalid or has already been used",
+            },
+          });
+        }
         res.json({
           subscriber: {
-            id: updated.id,
-            email: updated.email,
+            id: subscriber.id,
+            email: subscriber.email,
             verified: true,
           },
         });
