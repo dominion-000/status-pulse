@@ -20,6 +20,37 @@ export async function openAutoIncident(
      WHERE id = ${serviceId}::uuid
     ON CONFLICT (service_id) WHERE status <> 'Resolved' DO NOTHING
     RETURNING id`;
+  const incidentId = rows[0]?.id ?? null;
+  if (incidentId) await createAlertForIncident(tx, incidentId);
+  return incidentId;
+}
+
+export async function createAlertForIncident(
+  tx: Tx,
+  incidentId: string,
+): Promise<string | null> {
+  const rows = await tx.$queryRaw<{ id: string }[]>`
+    WITH new_alert AS (
+      INSERT INTO alerts (project_id, service_id, incident_id, state)
+      SELECT i.project_id, i.service_id, i.id, 'Outage'
+        FROM incidents i
+       WHERE i.id = ${incidentId}::uuid
+      ON CONFLICT (service_id, incident_id, state) DO NOTHING
+      RETURNING id, project_id, service_id
+    ), recipients AS (
+      INSERT INTO outbox_messages (project_id, kind, alert_id, recipient_email, subject, body)
+      SELECT a.project_id, 'alert', a.id, u.email,
+             '[' || p.name || '] ' || s.name || ' is down',
+             s.name || ' in project ' || p.name || ' has entered Outage and an incident has been opened. ' ||
+             'Open the dashboard to acknowledge this alert.'
+        FROM new_alert a
+        JOIN projects p ON p.id = a.project_id
+        JOIN services s ON s.id = a.service_id
+        JOIN memberships m ON m.project_id = a.project_id AND m.role IN ('Owner', 'Responder')
+        JOIN users u ON u.id = m.user_id
+      ON CONFLICT (alert_id, recipient_email) DO NOTHING
+    )
+    SELECT id FROM new_alert`;
   return rows[0]?.id ?? null;
 }
 
