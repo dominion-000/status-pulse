@@ -10,6 +10,7 @@ import { serviceRoutes } from "./routes/services";
 import { resultRoutes } from "./routes/results";
 import { statusRoutes } from "./routes/status";
 import { incidentRoutes } from "./routes/incidents";
+import { alertRoutes } from "./routes/alerts";
 
 export interface AppDeps {
   logStream?: { write(line: string): void };
@@ -68,6 +69,10 @@ export function createApp(deps: AppDeps = {}) {
     app.use(
       "/projects/:projectId/incidents",
       incidentRoutes(deps.prisma, deps.config),
+    );
+    app.use(
+      "/projects/:projectId/alerts",
+      alertRoutes(deps.prisma, deps.config),
     );
   }
 
