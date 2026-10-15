@@ -1,0 +1,18 @@
+<h1>Projects</h1>
+<p class="muted">Signed in as <%= user.email %></p>
+
+<% if (!projects.length) { %>
+  <div class="card"><p class="muted">You are not a member of any project yet.</p></div>
+<% } %>
+
+<% projects.forEach(function (p) { %>
+  <div class="card">
+    <div class="row">
+      <div>
+        <strong><%= p.name %></strong>
+        <span class="meta"> · <%= p.slug %> · <%= p.role %></span>
+      </div>
+      <a class="btn secondary" href="/app/projects/<%= p.id %>">Open</a>
+    </div>
+  </div>
+<% }) %>

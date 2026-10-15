@@ -1,0 +1,32 @@
+<h1>Plan</h1>
+<p class="muted"><%= project.name %></p>
+<p><a href="/app/projects/<%= project.id %>">← Project</a></p>
+
+<div class="card">
+  <div class="row">
+    <div>
+      <strong>Current plan: <%= current.name %></strong>
+      <span class="meta"> · up to <%= current.maxServices %> services, <%= current.maxMembers %> members · $<%= (current.priceCents / 100).toFixed(2) %></span>
+    </div>
+  </div>
+</div>
+
+<% plans.forEach(function (p) { %>
+  <div class="card">
+    <div class="row">
+      <div>
+        <strong><%= p.name %></strong>
+        <span class="meta"> · up to <%= p.maxServices %> services · $<%= (p.priceCents / 100).toFixed(2) %></span>
+      </div>
+      <% if (p.name === current.name) { %>
+        <span class="badge badge-operational">current</span>
+      <% } else if (typeof error === 'undefined' || error !== 'Only owners can change the plan') { %>
+        <form method="post" action="/app/projects/<%= project.id %>/plan" style="margin:0">
+          <input type="hidden" name="planName" value="<%= p.name %>" />
+          <input type="hidden" name="idempotencyKey" value="<%= defaultKey %>" />
+          <button type="submit" class="secondary">Switch to <%= p.name %></button>
+        </form>
+      <% } %>
+    </div>
+  </div>
+<% }) %>
