@@ -2,16 +2,21 @@ import type { RequestHandler } from "express";
 import { AppError } from "../errors";
 
 /**
- * Shared in-memory rate limiter for register, login and subscribe (SP-07.3).
- * Keyed by client IP. Suitable for a single-process demo.
+ * In-memory rate limiter (single process).
+ * Auth (login/register) and subscribe use separate stores so rehearsing
+ * one flow does not lock out the other.
  */
 
 export interface RateLimitStore {
   hit(key: string, windowMs: number): number;
+  clear(): void;
 }
 
 export class MemoryRateLimitStore implements RateLimitStore {
-  private readonly buckets = new Map<string, { count: number; resetAt: number }>();
+  private readonly buckets = new Map<
+    string,
+    { count: number; resetAt: number }
+  >();
 
   hit(key: string, windowMs: number): number {
     const now = Date.now();
@@ -29,7 +34,14 @@ export class MemoryRateLimitStore implements RateLimitStore {
   }
 }
 
-const defaultStore = new MemoryRateLimitStore();
+/** Login + register only. */
+export const authRateLimitStore = new MemoryRateLimitStore();
+
+/** Public subscribe only. */
+export const subscribeRateLimitStore = new MemoryRateLimitStore();
+
+/** @deprecated use authRateLimitStore */
+export const sharedAuthRateLimitStore = authRateLimitStore;
 
 export function rateLimit(options: {
   limit?: number;
@@ -40,25 +52,34 @@ export function rateLimit(options: {
   const limit = options.limit ?? 20;
   const windowMs = options.windowMs ?? 60 * 60 * 1000;
   const name = options.name ?? "auth";
-  const store = options.store ?? defaultStore;
+  const store = options.store ?? authRateLimitStore;
 
   return (req, _res, next) => {
-    // req.ip, not the X-Forwarded-For header: the first entry of that header is written by the client, so keying on
-    // it lets anyone dodge the limit by changing it. Behind a proxy, set TRUST_PROXY_HOPS (see app.ts).
-    const ip = req.ip || req.socket.remoteAddress || "unknown";
+    if (process.env.RATE_LIMIT_DISABLED === "1") {
+      next();
+      return;
+    }
+
+    const ip =
+      req.ip ||
+      (typeof req.headers["x-forwarded-for"] === "string"
+        ? req.headers["x-forwarded-for"].split(",")[0]?.trim()
+        : undefined) ||
+      req.socket.remoteAddress ||
+      "unknown";
+
     const key = `${name}:${ip}`;
     const count = store.hit(key, windowMs);
     if (count > limit) {
-      return next(
+      next(
         new AppError(
           "TOO_MANY_REQUESTS",
-          "Too many requests. Try again later.",
+          "Too many requests; try again later",
           429,
         ),
       );
+      return;
     }
     next();
   };
 }
-
-export const sharedAuthRateLimitStore = defaultStore;

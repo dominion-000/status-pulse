@@ -14,7 +14,7 @@ import {
 import { systemClock } from "../core/clock";
 import { notFoundError, validationError } from "../errors";
 import { param } from "../http-params";
-import { rateLimit, sharedAuthRateLimitStore } from "../middleware/rate-limit";
+import { rateLimit, subscribeRateLimitStore } from "../middleware/rate-limit";
 import { validateBody } from "../middleware/validate";
 
 const HISTORY_LIMIT = 20;
@@ -138,7 +138,7 @@ export function publicRoutes(prisma: PrismaClient): Router {
 
   r.post(
     "/:projectSlug/subscribe",
-    rateLimit({ name: "auth", store: sharedAuthRateLimitStore }),
+    rateLimit({ name: "subscribe", store: subscribeRateLimitStore }),
     validateBody(subscribeSchema),
     async (req, res, next) => {
       try {
@@ -197,20 +197,14 @@ export function publicRoutes(prisma: PrismaClient): Router {
             where: { projectId_email: { projectId: project.id, email } },
           });
 
+          // Already verified: do not attach services or confirm the address
           if (subscriber?.verifiedAt) {
-            for (const svc of publicServices) {
-              await tx.subscriberService.upsert({
-                where: {
-                  subscriberId_serviceId: {
-                    subscriberId: subscriber.id,
-                    serviceId: svc.id,
-                  },
-                },
-                create: { subscriberId: subscriber.id, serviceId: svc.id },
-                update: {},
-              });
-            }
-            return { subscriber, created: false, token: null as string | null };
+            return {
+              subscriber: null,
+              created: false,
+              token: null as string | null,
+              alreadyVerified: true as const,
+            };
           }
 
           if (!subscriber) {
@@ -260,13 +254,22 @@ export function publicRoutes(prisma: PrismaClient): Router {
           return { subscriber, created: true, token: raw };
         });
 
+        // Generic response when the address is already verified: no leak, no service changes.
+        if ("alreadyVerified" in result && result.alreadyVerified) {
+          res.status(200).json({
+            message:
+              "If this address is subscribed, no change was made. Use your existing subscription.",
+          });
+          return;
+        }
+
         res.status(result.created ? 201 : 200).json({
           subscriber: {
-            id: result.subscriber.id,
-            email: result.subscriber.email,
-            verified: result.subscriber.verifiedAt != null,
+            id: result.subscriber!.id,
+            email: result.subscriber!.email,
+            verified: false,
           },
-          // The token proves the caller reads that mailbox, so it is not returned in production (core/tokens.ts).
+          // Token only when EXPOSE_VERIFICATION_TOKEN=1 (testing).
           ...(result.token && exposeVerificationToken()
             ? { verificationToken: result.token }
             : {}),

@@ -13,10 +13,7 @@ import {
   hashToken,
 } from "../core/tokens";
 import { upgradePlan } from "../db/plans";
-import {
-  rateLimit,
-  sharedAuthRateLimitStore,
-} from "../middleware/rate-limit";
+import { rateLimit, subscribeRateLimitStore } from "../middleware/rate-limit";
 import { systemClock } from "../core/clock";
 import { hashPassword, verifyPassword } from "../core/password";
 import { signAccessToken } from "../auth/tokens";
@@ -48,7 +45,7 @@ function parseBody(req: { body?: unknown }): Record<string, unknown> {
  * Browser UI routes (EJS). API remains JSON under /auth, /projects, /public.
  */
 // The browser forms share the API's limit: they reach the same accounts and the same subscribe endpoint.
-const uiLimit = rateLimit({ name: "auth", store: sharedAuthRateLimitStore });
+const uiLimit = rateLimit({ name: "subscribe", store: subscribeRateLimitStore });
 
 // Fixed messages for the redirect codes, so a crafted link cannot put its own text on the page.
 const PLAN_ERRORS: Record<string, string> = {
@@ -270,19 +267,8 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
             projectId_email: { projectId: project.id, email },
           },
         });
+        // Match API: verified address — no service changes, no confirmation.
         if (subscriber?.verifiedAt) {
-          for (const svc of publicServices) {
-            await tx.subscriberService.upsert({
-              where: {
-                subscriberId_serviceId: {
-                  subscriberId: subscriber.id,
-                  serviceId: svc.id,
-                },
-              },
-              create: { subscriberId: subscriber.id, serviceId: svc.id },
-              update: {},
-            });
-          }
           return;
         }
         if (!subscriber) {
@@ -498,9 +484,13 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     }
   });
 
-  r.get("/app/logout", (_req, res) => {
+  r.post("/app/logout", (_req, res) => {
     clearTokenCookie(res);
     res.redirect("/app/login");
+  });
+  // GET kept as redirect-only hint; does not clear the session.
+  r.get("/app/logout", (_req, res) => {
+    res.redirect("/app");
   });
 
   // --- Authenticated app ---

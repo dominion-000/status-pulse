@@ -10,7 +10,7 @@ import {
 } from "../auth/tokens";
 import { conflictError, unauthorizedError, validationError } from "../errors";
 import { validateBody } from "../middleware/validate";
-import { rateLimit, sharedAuthRateLimitStore } from "../middleware/rate-limit";
+import { rateLimit, authRateLimitStore } from "../middleware/rate-limit";
 
 const registerSchema = z.object({
   email: z.string().email().max(320),
@@ -48,7 +48,7 @@ export function authRoutes(prisma: PrismaClient, config: Config): Router {
 
   r.post(
     "/register",
-    rateLimit({ name: "auth", store: sharedAuthRateLimitStore }),
+    rateLimit({ name: "auth", store: authRateLimitStore }),
     validateBody(registerSchema),
     async (req, res, next) => {
       try {
@@ -99,7 +99,7 @@ export function authRoutes(prisma: PrismaClient, config: Config): Router {
 
   r.post(
     "/login",
-    rateLimit({ name: "auth", store: sharedAuthRateLimitStore }),
+    rateLimit({ name: "auth", store: authRateLimitStore }),
     validateBody(loginSchema),
     async (req, res, next) => {
       try {
