@@ -153,6 +153,20 @@ export function projectRoutes(prisma: PrismaClient, config: Config): Router {
         }
 
         const projectId = param(req, "projectId");
+        const project = await prisma.project.findUniqueOrThrow({
+          where: { id: projectId },
+          include: { plan: true },
+        });
+        const memberCount = await prisma.membership.count({
+          where: { projectId },
+        });
+        if (memberCount >= project.plan.maxMembers) {
+          return next(
+            conflictError(
+              `Plan limit reached: ${project.plan.name} allows ${project.plan.maxMembers} members`,
+            ),
+          );
+        }
         const existing = await prisma.membership.findUnique({
           where: { projectId_userId: { projectId, userId: user.id } },
         });

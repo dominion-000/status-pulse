@@ -7,7 +7,7 @@ import { requireMembership } from "../middleware/permissions";
 import { validateBody } from "../middleware/validate";
 import { checkServiceUrl } from "../core/url-safety";
 import { encryptSecret } from "../core/secrets";
-import { notFoundError, validationError } from "../errors";
+import { conflictError, notFoundError, validationError } from "../errors";
 import { param } from "../http-params";
 import { systemClock } from "../core/clock";
 import { openIncidentIfNeeded } from "../db/incidents";
@@ -152,6 +152,21 @@ export function serviceRoutes(prisma: PrismaClient, config: Config): Router {
       try {
         const body = req.body as z.infer<typeof createServiceSchema>;
         const projectId = param(req, "projectId");
+
+        const project = await prisma.project.findUniqueOrThrow({
+          where: { id: projectId },
+          include: { plan: true },
+        });
+        const serviceCount = await prisma.service.count({
+          where: { projectId, deletedAt: null },
+        });
+        if (serviceCount >= project.plan.maxServices) {
+          return next(
+            conflictError(
+              `Plan limit reached: ${project.plan.name} allows ${project.plan.maxServices} services`,
+            ),
+          );
+        }
 
         const issues = configIssues(body);
         if (issues.length)
