@@ -181,9 +181,7 @@ describe.skipIf(!hasTestDb)("dispatcher and alerts API", () => {
         `UPDATE projects SET plan_id = (SELECT id FROM plans WHERE name = 'pro') WHERE id = $1`,
         [projectId],
       );
-
-
-    let calls = 0;
+let calls = 0;
     const failingSender = async () => {
       calls += 1;
       throw new MailSendError("forced");

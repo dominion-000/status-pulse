@@ -52,8 +52,7 @@ describe.skipIf(!hasTestDb)("changing a member's role (SP-01.4)", () => {
         `UPDATE projects SET plan_id = (SELECT id FROM plans WHERE name = 'pro') WHERE id = $1`,
         [project],
       );
-
-    const users = {} as Record<K, string>;
+const users = {} as Record<K, string>;
     for (const [name, role] of Object.entries(roles) as [
       K,
       "Owner" | "Responder" | "Viewer",

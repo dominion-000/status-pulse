@@ -63,12 +63,11 @@ describe.skipIf(!hasTestDb)("incidents endpoints (SP-05)", () => {
           [slug],
         )
       ).rows[0].id as string;
-      await t.client.query(
-        `UPDATE projects SET plan_id = (SELECT id FROM plans WHERE name = 'pro') WHERE id = $1`,
-        [projectId],
-      );
-
-    projectId = await project("p");
+projectId = await project("p");
+    await t.client.query(
+      `UPDATE projects SET plan_id = (SELECT id FROM plans WHERE name = 'pro') WHERE id = $1`,
+      [projectId],
+    );
     otherProjectId = await project("q");
     for (const [who, role] of [
       ["owner", "Owner"],
