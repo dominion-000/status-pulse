@@ -45,7 +45,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     databaseUrl,
     credentialsEncKey,
     jwtSecret: jwtSecret || "test-secret-at-least-32-characters!!",
-    accessTokenTtlSeconds: intEnv("ACCESS_TOKEN_TTL_SECONDS", 900),
+    accessTokenTtlSeconds: intEnv("ACCESS_TOKEN_TTL_SECONDS", 28800),
     refreshTokenTtlDays: intEnv("REFRESH_TOKEN_TTL_DAYS", 30),
     workerLeaseSeconds: intEnv("WORKER_LEASE_SECONDS", 60),
     workerMaxAttempts: intEnv("WORKER_MAX_ATTEMPTS", 5),
