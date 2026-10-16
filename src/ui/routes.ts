@@ -13,7 +13,11 @@ import {
   hashToken,
 } from "../core/tokens";
 import { upgradePlan } from "../db/plans";
-import { rateLimit, subscribeRateLimitStore } from "../middleware/rate-limit";
+import {
+  rateLimit,
+  authRateLimitStore,
+  subscribeRateLimitStore,
+} from "../middleware/rate-limit";
 import { systemClock } from "../core/clock";
 import { hashPassword, verifyPassword } from "../core/password";
 import { signAccessToken } from "../auth/tokens";
@@ -45,7 +49,8 @@ function parseBody(req: { body?: unknown }): Record<string, unknown> {
  * Browser UI routes (EJS). API remains JSON under /auth, /projects, /public.
  */
 // The browser forms share the API's limit: they reach the same accounts and the same subscribe endpoint.
-const uiLimit = rateLimit({ name: "subscribe", store: subscribeRateLimitStore });
+const authUiLimit = rateLimit({ name: "auth", store: authRateLimitStore });
+const subscribeUiLimit = rateLimit({ name: "subscribe", store: subscribeRateLimitStore });
 
 // Fixed messages for the redirect codes, so a crafted link cannot put its own text on the page.
 const PLAN_ERRORS: Record<string, string> = {
@@ -202,7 +207,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     }
   });
 
-  r.post("/status/:slug/subscribe", uiLimit, async (req, res, next) => {
+  r.post("/status/:slug/subscribe", subscribeUiLimit, async (req, res, next) => {
     try {
       const slug = String(req.params.slug);
       const body = parseBody(req);
@@ -409,7 +414,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     });
   });
 
-  r.post("/app/login", uiLimit, async (req, res, next) => {
+  r.post("/app/login", authUiLimit, async (req, res, next) => {
     try {
       const body = parseBody(req);
       const email = String(body.email ?? "").trim().toLowerCase();
@@ -446,7 +451,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     });
   });
 
-  r.post("/app/register", uiLimit, async (req, res, next) => {
+  r.post("/app/register", authUiLimit, async (req, res, next) => {
     try {
       const body = parseBody(req);
       const email = String(body.email ?? "").trim().toLowerCase();
