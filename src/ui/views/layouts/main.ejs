@@ -13,7 +13,13 @@
       <nav>
         <% if (typeof nav !== 'undefined' && nav) { %>
           <% nav.forEach(function (item) { %>
-            <a href="<%= item.href %>" class="<%= item.active ? 'active' : '' %>"><%= item.label %></a>
+            <% if (item.href === '/app/logout') { %>
+              <form method="post" action="/app/logout" style="display:inline;margin:0">
+                <button type="submit" class="secondary" style="padding:0.25rem 0.5rem"><%= item.label %></button>
+              </form>
+            <% } else { %>
+              <a href="<%= item.href %>" class="<%= item.active ? 'active' : '' %>"><%= item.label %></a>
+            <% } %>
           <% }) %>
         <% } %>
       </nav>
