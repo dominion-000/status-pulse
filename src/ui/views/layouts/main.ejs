@@ -22,6 +22,9 @@
             <% } %>
           <% }) %>
         <% } %>
+        <% if (typeof user !== 'undefined' && user && user.email) { %>
+          <span class="nav-user"><%= user.email %></span>
+        <% } %>
       </nav>
     </header>
 

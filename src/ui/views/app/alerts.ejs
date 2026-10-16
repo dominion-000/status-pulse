@@ -1,9 +1,17 @@
-<h1>Alerts</h1>
-<p class="muted"><%= project.name %></p>
-<p><a href="/app/projects/<%= project.id %>">← Project</a></p>
+<div class="page-head">
+  <div>
+    <p class="crumb"><a href="/app/projects/<%= project.id %>"><%= project.name %></a></p>
+    <h1>Alerts</h1>
+  </div>
+  <nav class="tabs">
+    <a href="/app/projects/<%= project.id %>">Overview</a>
+    <a class="active" href="/app/projects/<%= project.id %>/alerts">Alerts</a>
+    <a href="/app/projects/<%= project.id %>/plan">Plan</a>
+  </nav>
+</div>
 
 <% if (!alerts.length) { %>
-  <div class="card"><p class="muted">No alerts.</p></div>
+  <div class="card empty"><p class="muted">No alerts yet.</p></div>
 <% } %>
 
 <% alerts.forEach(function (a) { %>
@@ -23,7 +31,7 @@
     </div>
     <% if (a.messages && a.messages.length) { %>
       <table>
-        <thead><tr><th>Recipient</th><th>Attempts</th><th>Delivered</th><th></th></tr></thead>
+        <thead><tr><th>Recipient</th><th>Attempts</th><th>Status</th><th></th></tr></thead>
         <tbody>
           <% a.messages.forEach(function (m) { %>
             <tr>
