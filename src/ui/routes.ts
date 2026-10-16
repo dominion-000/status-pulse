@@ -13,11 +13,7 @@ import {
   hashToken,
 } from "../core/tokens";
 import { upgradePlan } from "../db/plans";
-import {
-  rateLimit,
-  authRateLimitStore,
-  subscribeRateLimitStore,
-} from "../middleware/rate-limit";
+import { rateLimit, subscribeRateLimitStore } from "../middleware/rate-limit";
 import { systemClock } from "../core/clock";
 import { hashPassword, verifyPassword } from "../core/password";
 import { signAccessToken } from "../auth/tokens";
@@ -26,10 +22,18 @@ import { renderPage } from "./render";
 
 function appNav(active: string) {
   return [
-    { href: "/app", label: "Home", active: active === "home" },
     { href: "/app/projects", label: "Projects", active: active === "projects" },
     { href: "/app/logout", label: "Sign out", active: false },
   ];
+}
+
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 64) || "project";
 }
 
 function publicNav(slug: string) {
@@ -49,8 +53,7 @@ function parseBody(req: { body?: unknown }): Record<string, unknown> {
  * Browser UI routes (EJS). API remains JSON under /auth, /projects, /public.
  */
 // The browser forms share the API's limit: they reach the same accounts and the same subscribe endpoint.
-const authUiLimit = rateLimit({ name: "auth", store: authRateLimitStore });
-const subscribeUiLimit = rateLimit({ name: "subscribe", store: subscribeRateLimitStore });
+const uiLimit = rateLimit({ name: "subscribe", store: subscribeRateLimitStore });
 
 // Fixed messages for the redirect codes, so a crafted link cannot put its own text on the page.
 const PLAN_ERRORS: Record<string, string> = {
@@ -207,7 +210,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     }
   });
 
-  r.post("/status/:slug/subscribe", subscribeUiLimit, async (req, res, next) => {
+  r.post("/status/:slug/subscribe", uiLimit, async (req, res, next) => {
     try {
       const slug = String(req.params.slug);
       const body = parseBody(req);
@@ -406,7 +409,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
   // --- Auth ---
 
   r.get("/app/login", (req, res) => {
-    if (readUserId(req, config)) return res.redirect("/app");
+    if (readUserId(req, config)) return res.redirect("/app/projects");
     renderPage(res, "auth/login", {
       title: "Sign in",
       brandHref: "/app/login",
@@ -414,7 +417,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     });
   });
 
-  r.post("/app/login", authUiLimit, async (req, res, next) => {
+  r.post("/app/login", uiLimit, async (req, res, next) => {
     try {
       const body = parseBody(req);
       const email = String(body.email ?? "").trim().toLowerCase();
@@ -436,14 +439,14 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
         config.accessTokenTtlSeconds,
       );
       setTokenCookie(res, token, config.accessTokenTtlSeconds);
-      res.redirect("/app");
+      res.redirect("/app/projects");
     } catch (err) {
       next(err);
     }
   });
 
   r.get("/app/register", (req, res) => {
-    if (readUserId(req, config)) return res.redirect("/app");
+    if (readUserId(req, config)) return res.redirect("/app/projects");
     renderPage(res, "auth/register", {
       title: "Register",
       brandHref: "/app/register",
@@ -451,7 +454,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     });
   });
 
-  r.post("/app/register", authUiLimit, async (req, res, next) => {
+  r.post("/app/register", uiLimit, async (req, res, next) => {
     try {
       const body = parseBody(req);
       const email = String(body.email ?? "").trim().toLowerCase();
@@ -483,7 +486,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
         config.accessTokenTtlSeconds,
       );
       setTokenCookie(res, token, config.accessTokenTtlSeconds);
-      res.redirect("/app");
+      res.redirect("/app/projects");
     } catch (err) {
       next(err);
     }
@@ -495,7 +498,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
   });
   // GET kept as redirect-only hint; does not clear the session.
   r.get("/app/logout", (_req, res) => {
-    res.redirect("/app");
+    res.redirect("/app/projects");
   });
 
   // --- Authenticated app ---
@@ -510,12 +513,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     try {
       const user = await requireUiUser(req);
       if (!user) return res.redirect("/app/login");
-      renderPage(res, "app/home", {
-        title: "Dashboard",
-        user: { email: user.email },
-        brandHref: "/app",
-        nav: appNav("home"),
-      });
+      res.redirect("/app/projects");
     } catch (err) {
       next(err);
     }
@@ -547,7 +545,80 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     }
   });
 
-  r.get("/app/projects/:projectId", async (req, res, next) => {
+  
+  r.post("/app/projects", async (req, res, next) => {
+    try {
+      const user = await requireUiUser(req);
+      if (!user) return res.redirect("/app/login");
+      const body = parseBody(req);
+      const name = String(body.name ?? "").trim();
+      let slug = String(body.slug ?? "").trim().toLowerCase();
+      if (!slug && name) slug = slugify(name);
+      const memberships = await prisma.membership.findMany({
+        where: { userId: user.id },
+        include: { project: true },
+        orderBy: { createdAt: "desc" },
+      });
+      const projects = memberships.map((m) => ({
+        id: m.project.id,
+        name: m.project.name,
+        slug: m.project.slug,
+        role: m.role,
+      }));
+      if (!name || !slug) {
+        return renderPage(res, "app/projects", {
+          title: "Projects",
+          user: { email: user.email },
+          projects,
+          formError: "Name and slug are required",
+          formName: name,
+          formSlug: slug,
+          brandHref: "/app/projects",
+          nav: appNav("projects"),
+        }, 400);
+      }
+      const existing = await prisma.project.findUnique({ where: { slug } });
+      if (existing) {
+        return renderPage(res, "app/projects", {
+          title: "Projects",
+          user: { email: user.email },
+          projects,
+          formError: "That slug is already taken",
+          formName: name,
+          formSlug: slug,
+          brandHref: "/app/projects",
+          nav: appNav("projects"),
+        }, 409);
+      }
+      const freePlan = await prisma.plan.findUnique({ where: { name: "free" } });
+      if (!freePlan) {
+        return renderPage(res, "app/projects", {
+          title: "Projects",
+          user: { email: user.email },
+          projects,
+          formError: "Plans are not seeded on this deployment",
+          formName: name,
+          formSlug: slug,
+          brandHref: "/app/projects",
+          nav: appNav("projects"),
+        }, 500);
+      }
+      const project = await prisma.$transaction(async (tx) => {
+        const created = await tx.project.create({
+          data: { name, slug, planId: freePlan.id },
+        });
+        await tx.membership.create({
+          data: { projectId: created.id, userId: user.id, role: "Owner" },
+        });
+        return created;
+      });
+      res.redirect(`/app/projects/${project.id}`);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+r.get("/app/projects/:projectId", async (req, res, next) => {
     try {
       const user = await requireUiUser(req);
       if (!user) return res.redirect("/app/login");
@@ -589,6 +660,8 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
           slug: project.slug,
         },
         plan: { name: project.plan.name },
+        tab: "overview",
+        canManage: membership.role === "Owner",
         services: services.map((s) => ({
           id: s.id,
           name: s.name,
@@ -602,7 +675,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
           status: i.status,
           createdAt: i.createdAt.toISOString(),
         })),
-        brandHref: "/app",
+        brandHref: "/app/projects",
         nav: appNav("projects"),
       });
     } catch (err) {
@@ -610,7 +683,61 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     }
   });
 
-  r.get("/app/projects/:projectId/alerts", async (req, res, next) => {
+  
+  r.post("/app/projects/:projectId/services", async (req, res, next) => {
+    try {
+      const user = await requireUiUser(req);
+      if (!user) return res.redirect("/app/login");
+      const projectId = String(req.params.projectId);
+      const membership = await prisma.membership.findUnique({
+        where: { projectId_userId: { projectId, userId: user.id } },
+      });
+      if (!membership || membership.role !== "Owner") {
+        return res.redirect(`/app/projects/${projectId}`);
+      }
+      const body = parseBody(req);
+      const name = String(body.name ?? "").trim();
+      const url = String(body.url ?? "").trim();
+      const intervalSeconds = Number(body.intervalSeconds ?? 60);
+      const timeoutSeconds = Number(body.timeoutSeconds ?? 10);
+      const isPublic = body.isPublic === "true" || body.isPublic === true;
+
+      const project = await prisma.project.findUniqueOrThrow({
+        where: { id: projectId },
+        include: { plan: true },
+      });
+      const serviceCount = await prisma.service.count({
+        where: { projectId, deletedAt: null },
+      });
+      if (serviceCount >= project.plan.maxServices) {
+        return res.redirect(`/app/projects/${projectId}?error=limit`);
+      }
+      if (!name || !url) {
+        return res.redirect(`/app/projects/${projectId}?error=required`);
+      }
+
+      await prisma.service.create({
+        data: {
+          projectId,
+          name,
+          url,
+          method: "GET",
+          intervalSeconds: Number.isFinite(intervalSeconds) ? intervalSeconds : 60,
+          timeoutSeconds: Number.isFinite(timeoutSeconds) ? timeoutSeconds : 10,
+          expectedStatusCodes: [200],
+          isPublic,
+          failThreshold: 2,
+          recoveryThreshold: 2,
+          slowThreshold: 3,
+        },
+      });
+      res.redirect(`/app/projects/${projectId}`);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+r.get("/app/projects/:projectId/alerts", async (req, res, next) => {
     try {
       const user = await requireUiUser(req);
       if (!user) return res.redirect("/app/login");
@@ -653,7 +780,8 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
             lastError: m.lastError,
           })),
         })),
-        brandHref: "/app",
+        tab: "alerts",
+        brandHref: "/app/projects",
         nav: appNav("projects"),
       });
     } catch (err) {
@@ -747,6 +875,8 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
         title: "Plan",
         user: { email: user.email },
         project: { id: project.id, name: project.name },
+        tab: "plan",
+        canUpgrade: membership.role === "Owner",
         current: {
           name: project.plan.name,
           maxServices: project.plan.maxServices,
@@ -759,12 +889,14 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
           priceCents: p.priceCents,
         })),
         defaultKey: `ui-${randomBytes(8).toString("hex")}`,
-        brandHref: "/app",
+        brandHref: "/app/projects",
         nav: appNav("projects"),
         error:
           membership.role !== "Owner"
             ? "Only owners can change the plan"
-            : PLAN_ERRORS[String(req.query.error ?? "")],
+            : (typeof PLAN_ERRORS !== "undefined"
+                ? PLAN_ERRORS[String(req.query.error ?? "")]
+                : undefined),
         success: req.query.success === "1" ? "Plan updated" : undefined,
       });
     } catch (err) {

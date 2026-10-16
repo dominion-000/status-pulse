@@ -1,18 +1,37 @@
-<h1>Projects</h1>
-<p class="muted">Signed in as <%= user.email %></p>
+<div class="page-head">
+  <h1>Projects</h1>
+</div>
 
 <% if (!projects.length) { %>
-  <div class="card"><p class="muted">You are not a member of any project yet.</p></div>
+  <div class="card empty">
+    <p>No projects yet. Create one to start monitoring.</p>
+  </div>
+<% } else { %>
+  <div class="list">
+    <% projects.forEach(function (p) { %>
+      <a class="card card-link" href="/app/projects/<%= p.id %>">
+        <div class="row">
+          <div>
+            <strong><%= p.name %></strong>
+            <span class="meta"> /<%= p.slug %> · <%= p.role %></span>
+          </div>
+          <span class="chevron">→</span>
+        </div>
+      </a>
+    <% }) %>
+  </div>
 <% } %>
 
-<% projects.forEach(function (p) { %>
-  <div class="card">
-    <div class="row">
-      <div>
-        <strong><%= p.name %></strong>
-        <span class="meta"> · <%= p.slug %> · <%= p.role %></span>
-      </div>
-      <a class="btn secondary" href="/app/projects/<%= p.id %>">Open</a>
-    </div>
-  </div>
-<% }) %>
+<h2>New project</h2>
+<form method="post" action="/app/projects" class="card form-card">
+  <% if (typeof formError !== 'undefined' && formError) { %>
+    <div class="flash flash-error"><%= formError %></div>
+  <% } %>
+  <label for="name">Name</label>
+  <input id="name" name="name" type="text" required maxlength="120" placeholder="Acme API" value="<%= typeof formName !== 'undefined' ? formName : '' %>" />
+
+  <label for="slug">Slug <span class="meta">(public URL)</span></label>
+  <input id="slug" name="slug" type="text" required maxlength="64" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="acme-api" value="<%= typeof formSlug !== 'undefined' ? formSlug : '' %>" />
+
+  <button type="submit">Create project</button>
+</form>
