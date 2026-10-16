@@ -36,6 +36,11 @@ describe.skipIf(!hasTestDb)(
           `INSERT INTO projects (name, slug) VALUES ('p', 'p') RETURNING id`,
         )
       ).rows[0].id;
+      await t.client.query(
+        `UPDATE projects SET plan_id = (SELECT id FROM plans WHERE name = 'pro') WHERE id = $1`,
+        [projectId],
+      );
+
     });
     afterAll(async () => {
       await p?.close();

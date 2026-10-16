@@ -177,6 +177,11 @@ describe.skipIf(!hasTestDb)("dispatcher and alerts API", () => {
       [projectId, alertId, NOW.toISOString()],
     );
     const msgId = ins.rows[0].id as string;
+      await t.client.query(
+        `UPDATE projects SET plan_id = (SELECT id FROM plans WHERE name = 'pro') WHERE id = $1`,
+        [projectId],
+      );
+
 
     let calls = 0;
     const failingSender = async () => {

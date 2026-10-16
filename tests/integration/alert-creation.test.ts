@@ -86,6 +86,11 @@ describe.skipIf(!hasTestDb)(
           [projectId, `svc-${n}`, isPublic, at(-24 * 60)],
         )
       ).rows[0].id as string;
+      await t.client.query(
+        `UPDATE projects SET plan_id = (SELECT id FROM plans WHERE name = 'pro') WHERE id = $1`,
+        [projectId],
+      );
+
     }
     async function fail(serviceId: string, when?: Date) {
       minute += 1;
