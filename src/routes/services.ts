@@ -5,7 +5,13 @@ import type { Config } from "../config";
 import { requireAuth, loadUser } from "../middleware/auth";
 import { requireMembership } from "../middleware/permissions";
 import { validateBody } from "../middleware/validate";
-import { checkServiceUrl } from "../core/url-safety";
+import {
+  codesField,
+  configIssues,
+  createServiceSchema,
+  intervalField,
+} from "../core/service-config";
+import { createService } from "../db/service-create";
 import { encryptSecret } from "../core/secrets";
 import { conflictError, notFoundError, validationError } from "../errors";
 import { param } from "../http-params";
@@ -14,32 +20,6 @@ import { openIncidentIfNeeded } from "../db/incidents";
 import { lockService, refreshStatus } from "../db/service-status";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const INTERVALS = [30, 60, 120, 300, 600, 900, 1800, 3600] as const;
-
-const intervalField = z
-  .number()
-  .int()
-  .refine((n) => (INTERVALS as readonly number[]).includes(n), {
-    message: `must be one of ${INTERVALS.join(", ")}`,
-  });
-const codesField = z.array(z.number().int().min(100).max(599)).min(1);
-
-const createServiceSchema = z.object({
-  name: z.string().min(1).max(120),
-  url: z.string().min(1).max(2048),
-  method: z.enum(["GET", "HEAD", "POST"]).default("GET"),
-  intervalSeconds: intervalField,
-  timeoutSeconds: z.number().int().positive(),
-  expectedStatusCodes: codesField.default([200]),
-  expectedBodyText: z.string().max(500).optional(),
-  isPublic: z.boolean().default(false),
-  credentials: z.string().max(2000).optional(),
-  failThreshold: z.number().int().min(1).max(20).default(3),
-  recoveryThreshold: z.number().int().min(1).max(20).default(2),
-  slowThreshold: z.number().int().min(1).max(20).default(3),
-  degradedMs: z.number().int().positive().optional(),
-});
 
 const patchServiceSchema = z
   .object({
@@ -62,23 +42,6 @@ const patchServiceSchema = z
   .refine((b) => Object.keys(b).length > 0, {
     message: "at least one field is required",
   });
-
-/** Rules that depend on more than one field, checked on the complete configuration. */
-function configIssues(c: {
-  url: string;
-  intervalSeconds: number;
-  timeoutSeconds: number;
-}): { path: string; message: string }[] {
-  const issues: { path: string; message: string }[] = [];
-  if (c.timeoutSeconds >= c.intervalSeconds)
-    issues.push({
-      path: "timeoutSeconds",
-      message: "must be less than intervalSeconds",
-    });
-  for (const m of checkServiceUrl(c.url).issues)
-    issues.push({ path: "url", message: m });
-  return issues;
-}
 
 const SNAPSHOT_FIELDS = [
   "name",
@@ -150,89 +113,16 @@ export function serviceRoutes(prisma: PrismaClient, config: Config): Router {
     validateBody(createServiceSchema),
     async (req, res, next) => {
       try {
-        const body = req.body as z.infer<typeof createServiceSchema>;
-        const projectId = param(req, "projectId");
-
-        const project = await prisma.project.findUniqueOrThrow({
-          where: { id: projectId },
-          include: { plan: true },
+        const outcome = await createService(prisma, config, {
+          projectId: param(req, "projectId"),
+          actorUserId: req.user!.id,
+          input: req.body as z.infer<typeof createServiceSchema>,
         });
-        const serviceCount = await prisma.service.count({
-          where: { projectId, deletedAt: null },
-        });
-        if (serviceCount >= project.plan.maxServices) {
-          return next(
-            conflictError(
-              `Plan limit reached: ${project.plan.name} allows ${project.plan.maxServices} services`,
-            ),
-          );
-        }
-
-        const issues = configIssues(body);
-        if (issues.length)
-          return next(validationError("Validation failed", issues));
-
-        const credentialsEnc = body.credentials
-          ? new Uint8Array(
-              encryptSecret(body.credentials, config.credentialsEncKey),
-            )
-          : null;
-
-        const snapshot = {
-          name: body.name,
-          url: body.url,
-          method: body.method,
-          intervalSeconds: body.intervalSeconds,
-          timeoutSeconds: body.timeoutSeconds,
-          expectedStatusCodes: body.expectedStatusCodes,
-          expectedBodyText: body.expectedBodyText ?? null,
-          isPublic: body.isPublic,
-          failThreshold: body.failThreshold,
-          recoveryThreshold: body.recoveryThreshold,
-          slowThreshold: body.slowThreshold,
-          degradedMs: body.degradedMs ?? null,
-        };
-
-        const service = await prisma.$transaction(async (tx) => {
-          const s = await tx.service.create({
-            data: {
-              projectId,
-              name: body.name,
-              url: body.url,
-              method: body.method,
-              intervalSeconds: body.intervalSeconds,
-              timeoutSeconds: body.timeoutSeconds,
-              expectedStatusCodes: body.expectedStatusCodes,
-              expectedBodyText: body.expectedBodyText ?? null,
-              isPublic: body.isPublic,
-              credentialsEnc,
-              failThreshold: body.failThreshold,
-              recoveryThreshold: body.recoveryThreshold,
-              slowThreshold: body.slowThreshold,
-              degradedMs: body.degradedMs ?? null,
-              version: 1,
-            },
-          });
-          await tx.serviceConfigVersion.create({
-            data: {
-              serviceId: s.id,
-              version: 1,
-              snapshot,
-              actorUserId: req.user!.id,
-            },
-          });
-          await tx.auditLog.create({
-            data: {
-              projectId,
-              actorUserId: req.user!.id,
-              action: "service.created",
-              entityType: "service",
-              entityId: s.id,
-              details: { name: body.name, url: body.url },
-            },
-          });
-          return s;
-        });
+        if (outcome.kind === "invalid")
+          return next(validationError("Validation failed", outcome.issues));
+        if (outcome.kind === "plan_limit")
+          return next(conflictError(outcome.message));
+        const service = outcome.service;
 
         res.status(201).json({ service: serviceShape(service) });
       } catch (err) {

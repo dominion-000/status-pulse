@@ -12,8 +12,16 @@ import {
   exposeVerificationToken,
   hashToken,
 } from "../core/tokens";
+import { createProjectSchema } from "../core/project-input";
+import { createServiceSchema } from "../core/service-config";
+import { createProject } from "../db/projects";
+import { createService } from "../db/service-create";
 import { upgradePlan } from "../db/plans";
-import { rateLimit, subscribeRateLimitStore } from "../middleware/rate-limit";
+import {
+  authRateLimitStore,
+  rateLimit,
+  subscribeRateLimitStore,
+} from "../middleware/rate-limit";
 import { systemClock } from "../core/clock";
 import { hashPassword, verifyPassword } from "../core/password";
 import { signAccessToken } from "../auth/tokens";
@@ -53,13 +61,33 @@ function parseBody(req: { body?: unknown }): Record<string, unknown> {
  * Browser UI routes (EJS). API remains JSON under /auth, /projects, /public.
  */
 // The browser forms share the API's limit: they reach the same accounts and the same subscribe endpoint.
-const uiLimit = rateLimit({ name: "subscribe", store: subscribeRateLimitStore });
+// Login and register share the API's login limit, subscribe shares the API's subscribe limit: the browser forms reach
+// the same accounts and the same endpoint, and flooding one form must not lock people out of the other.
+const uiAuthLimit = rateLimit({ name: "auth", store: authRateLimitStore });
+const uiSubscribeLimit = rateLimit({
+  name: "subscribe",
+  store: subscribeRateLimitStore,
+});
 
 // Fixed messages for the redirect codes, so a crafted link cannot put its own text on the page.
 const PLAN_ERRORS: Record<string, string> = {
   payment_failed: "The payment failed. The plan is unchanged.",
   key_conflict: "That Idempotency-Key was already used for a different plan.",
   unknown_plan: "Unknown plan.",
+  over_limit:
+    "The project has more services or members than that plan allows. Remove some first.",
+};
+
+// Fixed messages for the service form's redirect codes.
+const SERVICE_ERRORS: Record<string, string> = {
+  required: "Name and address are required.",
+  limit:
+    "This plan's service limit is reached. Upgrade the plan to add more services.",
+  url: "The address is not allowed. Use a public http or https address; localhost and private networks are refused.",
+  interval:
+    "The interval must be one of 30, 60, 120, 300, 600, 900, 1800 or 3600 seconds.",
+  timeout: "The timeout must be shorter than the interval.",
+  invalid: "The configuration is not valid.",
 };
 
 export function uiRoutes(prisma: PrismaClient, config: Config): Router {
@@ -210,7 +238,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     }
   });
 
-  r.post("/status/:slug/subscribe", uiLimit, async (req, res, next) => {
+  r.post("/status/:slug/subscribe", uiSubscribeLimit, async (req, res, next) => {
     try {
       const slug = String(req.params.slug);
       const body = parseBody(req);
@@ -417,7 +445,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     });
   });
 
-  r.post("/app/login", uiLimit, async (req, res, next) => {
+  r.post("/app/login", uiAuthLimit, async (req, res, next) => {
     try {
       const body = parseBody(req);
       const email = String(body.email ?? "").trim().toLowerCase();
@@ -454,7 +482,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
     });
   });
 
-  r.post("/app/register", uiLimit, async (req, res, next) => {
+  r.post("/app/register", uiAuthLimit, async (req, res, next) => {
     try {
       const body = parseBody(req);
       const email = String(body.email ?? "").trim().toLowerCase();
@@ -577,8 +605,26 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
           nav: appNav("projects"),
         }, 400);
       }
-      const existing = await prisma.project.findUnique({ where: { slug } });
-      if (existing) {
+      const parsed = createProjectSchema.safeParse({ name, slug });
+      if (!parsed.success) {
+        const field = parsed.error.issues[0]?.path[0];
+        return renderPage(res, "app/projects", {
+          title: "Projects",
+          user: { email: user.email },
+          projects,
+          formError: field === "slug" ? "Slug must be 2 to 64 lowercase letters or digits, with single hyphens between them" : "Name must be 1 to 120 characters",
+          formName: name,
+          formSlug: slug,
+          brandHref: "/app/projects",
+          nav: appNav("projects"),
+        }, 400);
+      }
+      const outcome = await createProject(prisma, {
+        actorUserId: user.id,
+        name,
+        slug,
+      });
+      if (outcome.kind === "slug_taken") {
         return renderPage(res, "app/projects", {
           title: "Projects",
           user: { email: user.email },
@@ -590,8 +636,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
           nav: appNav("projects"),
         }, 409);
       }
-      const freePlan = await prisma.plan.findUnique({ where: { name: "free" } });
-      if (!freePlan) {
+      if (outcome.kind === "plans_missing") {
         return renderPage(res, "app/projects", {
           title: "Projects",
           user: { email: user.email },
@@ -603,15 +648,7 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
           nav: appNav("projects"),
         }, 500);
       }
-      const project = await prisma.$transaction(async (tx) => {
-        const created = await tx.project.create({
-          data: { name, slug, planId: freePlan.id },
-        });
-        await tx.membership.create({
-          data: { projectId: created.id, userId: user.id, role: "Owner" },
-        });
-        return created;
-      });
+      const project = outcome.project;
       res.redirect(`/app/projects/${project.id}`);
     } catch (err) {
       next(err);
@@ -662,6 +699,7 @@ r.get("/app/projects/:projectId", async (req, res, next) => {
         plan: { name: project.plan.name },
         tab: "overview",
         canManage: membership.role === "Owner",
+        formError: SERVICE_ERRORS[String(req.query.error ?? "")],
         services: services.map((s) => ({
           id: s.id,
           name: s.name,
@@ -702,35 +740,38 @@ r.get("/app/projects/:projectId", async (req, res, next) => {
       const timeoutSeconds = Number(body.timeoutSeconds ?? 10);
       const isPublic = body.isPublic === "true" || body.isPublic === true;
 
-      const project = await prisma.project.findUniqueOrThrow({
-        where: { id: projectId },
-        include: { plan: true },
-      });
-      const serviceCount = await prisma.service.count({
-        where: { projectId, deletedAt: null },
-      });
-      if (serviceCount >= project.plan.maxServices) {
-        return res.redirect(`/app/projects/${projectId}?error=limit`);
-      }
-      if (!name || !url) {
+      if (!name || !url)
         return res.redirect(`/app/projects/${projectId}?error=required`);
-      }
-
-      await prisma.service.create({
-        data: {
-          projectId,
-          name,
-          url,
-          method: "GET",
-          intervalSeconds: Number.isFinite(intervalSeconds) ? intervalSeconds : 60,
-          timeoutSeconds: Number.isFinite(timeoutSeconds) ? timeoutSeconds : 10,
-          expectedStatusCodes: [200],
-          isPublic,
-          failThreshold: 2,
-          recoveryThreshold: 2,
-          slowThreshold: 3,
-        },
+      const parsed = createServiceSchema.safeParse({
+        name,
+        url,
+        intervalSeconds,
+        timeoutSeconds,
+        isPublic,
       });
+      const codeFor = (path: unknown) =>
+        path === "url"
+          ? "url"
+          : path === "intervalSeconds"
+            ? "interval"
+            : path === "timeoutSeconds"
+              ? "timeout"
+              : "invalid";
+      if (!parsed.success)
+        return res.redirect(
+          `/app/projects/${projectId}?error=${codeFor(parsed.error.issues[0]?.path[0])}`,
+        );
+      const outcome = await createService(prisma, config, {
+        projectId,
+        actorUserId: user.id,
+        input: parsed.data,
+      });
+      if (outcome.kind === "plan_limit")
+        return res.redirect(`/app/projects/${projectId}?error=limit`);
+      if (outcome.kind === "invalid")
+        return res.redirect(
+          `/app/projects/${projectId}?error=${codeFor(outcome.issues[0]?.path)}`,
+        );
       res.redirect(`/app/projects/${projectId}`);
     } catch (err) {
       next(err);

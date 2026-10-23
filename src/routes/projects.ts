@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
+import { createProjectSchema } from "../core/project-input";
+import { createProject, inviteMember } from "../db/projects";
 import type { PrismaClient } from "../../prisma/generated";
 import type { Config } from "../config";
 import { requireAuth, loadUser } from "../middleware/auth";
@@ -7,18 +9,6 @@ import { requireMembership } from "../middleware/permissions";
 import { validateBody } from "../middleware/validate";
 import { conflictError, notFoundError, validationError } from "../errors";
 import { param } from "../http-params";
-
-const createProjectSchema = z.object({
-  name: z.string().min(1).max(120),
-  slug: z
-    .string()
-    .min(2)
-    .max(64)
-    .regex(
-      /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
-      "slug must be lowercase alphanumeric with hyphens",
-    ),
-});
 
 const inviteSchema = z.object({
   email: z.string().email(),
@@ -56,33 +46,16 @@ export function projectRoutes(prisma: PrismaClient, config: Config): Router {
     async (req, res, next) => {
       try {
         const { name, slug } = req.body as z.infer<typeof createProjectSchema>;
-        const existing = await prisma.project.findUnique({ where: { slug } });
-        if (existing) return next(conflictError("Slug already taken"));
-
-        const freePlan = await prisma.plan.findUnique({
-          where: { name: "free" },
+        const outcome = await createProject(prisma, {
+          actorUserId: req.user!.id,
+          name,
+          slug,
         });
-        if (!freePlan) return next(new Error("free plan is not seeded"));
-
-        const project = await prisma.$transaction(async (tx) => {
-          const p = await tx.project.create({
-            data: { name, slug, planId: freePlan.id },
-          });
-          await tx.membership.create({
-            data: { projectId: p.id, userId: req.user!.id, role: "Owner" },
-          });
-          await tx.auditLog.create({
-            data: {
-              projectId: p.id,
-              actorUserId: req.user!.id,
-              action: "project.created",
-              entityType: "project",
-              entityId: p.id,
-              details: { name, slug },
-            },
-          });
-          return p;
-        });
+        if (outcome.kind === "slug_taken")
+          return next(conflictError("Slug already taken"));
+        if (outcome.kind === "plans_missing")
+          return next(new Error("free plan is not seeded"));
+        const project = outcome.project;
 
         res.status(201).json({ project: projectShape(project) });
       } catch (err) {
@@ -141,52 +114,23 @@ export function projectRoutes(prisma: PrismaClient, config: Config): Router {
     async (req, res, next) => {
       try {
         const { email, role } = req.body as z.infer<typeof inviteSchema>;
-        const user = await prisma.user.findUnique({
-          where: { email: email.toLowerCase() },
+        const outcome = await inviteMember(prisma, {
+          projectId: param(req, "projectId"),
+          actorUserId: req.user!.id,
+          email,
+          role,
         });
-        if (!user) {
+        if (outcome.kind === "no_user")
           return next(
             validationError("User not found", [
               { path: "email", message: "no account with this email" },
             ]),
           );
-        }
-
-        const projectId = param(req, "projectId");
-        const project = await prisma.project.findUniqueOrThrow({
-          where: { id: projectId },
-          include: { plan: true },
-        });
-        const memberCount = await prisma.membership.count({
-          where: { projectId },
-        });
-        if (memberCount >= project.plan.maxMembers) {
-          return next(
-            conflictError(
-              `Plan limit reached: ${project.plan.name} allows ${project.plan.maxMembers} members`,
-            ),
-          );
-        }
-        const existing = await prisma.membership.findUnique({
-          where: { projectId_userId: { projectId, userId: user.id } },
-        });
-        if (existing) return next(conflictError("User is already a member"));
-
-        await prisma.$transaction([
-          prisma.membership.create({
-            data: { projectId, userId: user.id, role },
-          }),
-          prisma.auditLog.create({
-            data: {
-              projectId,
-              actorUserId: req.user!.id,
-              action: "member.invited",
-              entityType: "membership",
-              entityId: user.id,
-              details: { email: user.email, role },
-            },
-          }),
-        ]);
+        if (outcome.kind === "already_member")
+          return next(conflictError("User is already a member"));
+        if (outcome.kind === "plan_limit")
+          return next(conflictError(outcome.message));
+        const user = outcome.user;
 
         res.status(201).json({
           member: { userId: user.id, email: user.email, role },

@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from "../../prisma/generated";
+import { lockProject } from "./project-lock";
 
 export interface PlanView {
   name: string;
@@ -17,6 +18,7 @@ export type UpgradeOutcome =
     }
   | { kind: "unknown_plan" }
   | { kind: "key_conflict" }
+  | { kind: "over_limit"; message: string }
   | { kind: "payment_failed"; message: string };
 
 const planView = (p: PlanView): PlanView => ({
@@ -32,6 +34,9 @@ const planView = (p: PlanView): PlanView => ({
  * the same key race, the loser hits the constraint and answers with what the winner stored instead of failing.
  * A failed payment is recorded and leaves the plan unchanged; the same key then keeps answering with that failure,
  * and a new attempt needs a new key. Only a successful upgrade is audited.
+ * A plan whose limits are below what the project already has is refused (over_limit), so a project never holds more
+ * services or members than its plan allows. The project row is locked for that check, which keeps it consistent with
+ * concurrent creations. Nothing is recorded for a refused change, so the same key can be used again after cleaning up.
  */
 export async function upgradePlan(
   prisma: PrismaClient,
@@ -96,7 +101,18 @@ export async function upgradePlan(
       where: { id: args.projectId },
       include: { plan: true },
     });
-    const payment = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
+      await lockProject(tx, args.projectId);
+      const services = await tx.service.count({
+        where: { projectId: args.projectId, deletedAt: null },
+      });
+      const members = await tx.membership.count({
+        where: { projectId: args.projectId },
+      });
+      if (services > target.maxServices || members > target.maxMembers)
+        return {
+          over: `The project has ${services} services and ${members} members; the ${target.name} plan allows ${target.maxServices} and ${target.maxMembers}`,
+        } as const;
       const created = await tx.paymentAttempt.create({
         data: {
           projectId: args.projectId,
@@ -124,8 +140,10 @@ export async function upgradePlan(
           },
         },
       });
-      return created;
+      return { payment: created } as const;
     });
+    if ("over" in result) return { kind: "over_limit", message: result.over };
+    const payment = result.payment;
     return {
       kind: "ok",
       replayed: false,
