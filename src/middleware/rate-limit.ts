@@ -60,13 +60,9 @@ export function rateLimit(options: {
       return;
     }
 
-    const ip =
-      req.ip ||
-      (typeof req.headers["x-forwarded-for"] === "string"
-        ? req.headers["x-forwarded-for"].split(",")[0]?.trim()
-        : undefined) ||
-      req.socket.remoteAddress ||
-      "unknown";
+    // Never the X-Forwarded-For header: the client writes it, so keying on it lets anyone dodge the limit.
+    // Behind a proxy set TRUST_PROXY_HOPS (see app.ts) and req.ip is the real client.
+    const ip = req.ip || req.socket.remoteAddress || "unknown";
 
     const key = `${name}:${ip}`;
     const count = store.hit(key, windowMs);
