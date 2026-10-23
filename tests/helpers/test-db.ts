@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { randomBytes } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -9,6 +10,10 @@ import { PrismaClient } from "../../prisma/generated";
 // they exercise unique indexes, CHECK constraints and cascades.
 // Each test file gets its own schema, built by applying the real prisma/migrations files in order.
 export const hasTestDb = Boolean(process.env.DATABASE_URL_TEST);
+
+if (!hasTestDb) {
+  throw new Error("DATABASE_URL_TEST is required");
+}
 
 export interface TestDb {
   client: pg.Client;

@@ -5,6 +5,18 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: status-pulse-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -15,11 +27,9 @@ jobs:
       - run: pnpm install
       - run: pnpm prisma:generate
         env:
-          # prisma.config.ts requires the variable; generating the client never connects to it
-          DATABASE_URL: postgresql://placeholder@localhost:5432/placeholder
+          DATABASE_URL: postgres://postgres:status-pulse-test@localhost:5432/postgres
       - run: pnpm typecheck
       - run: pnpm build
       - run: pnpm test
         env:
-          # Database tests run only when this repository secret is set; otherwise they are skipped
-          DATABASE_URL_TEST: ${{ secrets.DATABASE_URL_TEST }}
+          DATABASE_URL_TEST: postgres://postgres:status-pulse-test@localhost:5432/postgres
