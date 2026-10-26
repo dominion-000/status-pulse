@@ -16,6 +16,7 @@ import { publicRoutes } from "./routes/public";
 import { planRoutes } from "./routes/plans";
 import { adminRoutes } from "./routes/admin";
 import { uiRoutes } from "./ui/routes";
+import { mountApiDocs } from "./docs";
 
 export interface AppDeps {
   logStream?: { write(line: string): void };
@@ -124,6 +125,8 @@ export function createApp(deps: AppDeps = {}) {
     // Browser UI at /
     app.use(uiRoutes(deps.prisma, deps.config));
   }
+
+  mountApiDocs(app);
 
   app.use(notFound);
   app.use(errorHandler);
