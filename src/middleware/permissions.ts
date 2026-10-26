@@ -34,3 +34,12 @@ export function requireMembership(
     }
   };
 }
+
+/** Platform administrator. Non-admins receive 403. */
+export function requireAdmin(): RequestHandler {
+  return (req, _res, next) => {
+    if (!req.user) return next(unauthorizedError());
+    if (!req.user.isAdmin) return next(forbiddenError());
+    next();
+  };
+}

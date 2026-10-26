@@ -7,6 +7,7 @@ import type { PrismaClient } from "../../prisma/generated";
 export interface AuthUser {
   id: string;
   email: string;
+  isAdmin: boolean;
 }
 
 declare global {
@@ -28,7 +29,7 @@ export function requireAuth(config: Config): RequestHandler {
     const token = header.slice(7);
     try {
       const payload = verifyAccessToken(token, config.jwtSecret);
-      req.user = { id: payload.sub, email: "" };
+      req.user = { id: payload.sub, email: "", isAdmin: false };
       next();
     } catch {
       next(unauthorizedError("Invalid or expired access token"));
@@ -43,7 +44,7 @@ export function loadUser(prisma: PrismaClient): RequestHandler {
     try {
       const user = await prisma.user.findUnique({ where: { id: req.user.id } });
       if (!user) return next(unauthorizedError("User no longer exists"));
-      req.user = { id: user.id, email: user.email };
+      req.user = { id: user.id, email: user.email, isAdmin: user.isAdmin };
       next();
     } catch (err) {
       next(err);

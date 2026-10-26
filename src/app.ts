@@ -14,6 +14,7 @@ import { incidentRoutes } from "./routes/incidents";
 import { alertRoutes } from "./routes/alerts";
 import { publicRoutes } from "./routes/public";
 import { planRoutes } from "./routes/plans";
+import { adminRoutes } from "./routes/admin";
 import { uiRoutes } from "./ui/routes";
 
 export interface AppDeps {
@@ -90,6 +91,7 @@ function mountApi(app: express.Express, deps: Required<Pick<AppDeps, "config" | 
   );
   api.use("/projects/:projectId", planRoutes(deps.prisma, deps.config));
   api.use("/public", publicRoutes(deps.prisma));
+  api.use("/admin", adminRoutes(deps.prisma, deps.config));
   app.use("/api/v1", api);
 }
 
