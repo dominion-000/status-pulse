@@ -40,9 +40,14 @@ export async function createTestDb(): Promise<TestDb> {
     .map((d) => d.name)
     .sort();
   for (const folder of folders) {
-    await client.query(
-      readFileSync(join(root, folder, "migration.sql"), "utf8"),
+    let sql = readFileSync(join(root, folder, "migration.sql"), "utf8");
+    // Embedded Postgres builds used in some sandboxes ship without pgcrypto.
+    // gen_random_uuid() is built into PostgreSQL 13+, so the extension is optional here.
+    sql = sql.replace(
+      /CREATE EXTENSION IF NOT EXISTS ["']?pgcrypto["']?;/gi,
+      "-- pgcrypto unavailable in some embeds; gen_random_uuid is core since PG13",
     );
+    await client.query(sql);
   }
 
   return {
