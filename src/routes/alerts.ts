@@ -6,6 +6,7 @@ import { conflictError, notFoundError } from "../errors";
 import { param } from "../http-params";
 import { loadUser, requireAuth } from "../middleware/auth";
 import { requireMembership } from "../middleware/permissions";
+import { acknowledgeAlert } from "../db/acknowledge-alert";
 
 function alertView(a: {
   id: string;
@@ -105,46 +106,18 @@ export function alertRoutes(prisma: PrismaClient, config: Config): Router {
         const alertId = param(req, "alertId");
         const userId = req.user!.id;
 
-        const alert = await prisma.alert.findFirst({
-          where: { id: alertId, projectId },
-          include: { acknowledgement: true },
+        const result = await acknowledgeAlert(prisma, {
+          projectId,
+          alertId,
+          actorUserId: userId,
         });
-        if (!alert) return next(notFoundError());
+        if (!result.ok) return next(notFoundError());
 
-        if (alert.acknowledgement) {
-          res.json({
-            acknowledgement: {
-              id: alert.acknowledgement.id,
-              actorUserId: alert.acknowledgement.actorUserId,
-              createdAt: alert.acknowledgement.createdAt.toISOString(),
-            },
-          });
-          return;
-        }
-
-        const ack = await prisma.acknowledgement.create({
-          data: {
-            alertId,
-            actorUserId: userId,
-          },
-        });
-
-        await prisma.auditLog.create({
-          data: {
-            projectId,
-            actorUserId: userId,
-            action: "alert.acknowledge",
-            entityType: "alert",
-            entityId: alertId,
-            details: {},
-          },
-        });
-
-        res.status(201).json({
+        res.status(result.created ? 201 : 200).json({
           acknowledgement: {
-            id: ack.id,
-            actorUserId: ack.actorUserId,
-            createdAt: ack.createdAt.toISOString(),
+            id: result.acknowledgement.id,
+            actorUserId: result.acknowledgement.actorUserId,
+            createdAt: result.acknowledgement.createdAt.toISOString(),
           },
         });
       } catch (err) {

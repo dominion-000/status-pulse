@@ -2,7 +2,8 @@ import { Router } from "express";
 import { z } from "zod";
 import type { PrismaClient } from "../../prisma/generated";
 import type { Config } from "../config";
-import { hashPassword, passwordIssues, verifyPassword } from "../core/password";
+import { verifyPassword } from "../core/password";
+import { registerUser } from "../db/register-user";
 import {
   generateRefreshToken,
   hashRefreshToken,
@@ -55,29 +56,27 @@ export function authRoutes(prisma: PrismaClient, config: Config): Router {
         const { email, password, name } = req.body as z.infer<
           typeof registerSchema
         >;
-        const issues = passwordIssues(password);
-        if (issues.length) {
-          return next(
-            validationError(
-              "Invalid password",
-              issues.map((m) => ({ path: "password", message: m })),
-            ),
-          );
+        const created = await registerUser(prisma, {
+          email,
+          password,
+          name: name ?? null,
+          strictPassword: true,
+        });
+        if (!created.ok) {
+          if (created.reason === "invalid_password") {
+            return next(
+              validationError(
+                "Invalid password",
+                (created.passwordMessages ?? []).map((m) => ({
+                  path: "password",
+                  message: m,
+                })),
+              ),
+            );
+          }
+          return next(conflictError("Email already registered"));
         }
-
-        const existing = await prisma.user.findUnique({
-          where: { email: email.toLowerCase() },
-        });
-        if (existing) return next(conflictError("Email already registered"));
-
-        const passwordHash = await hashPassword(password);
-        const user = await prisma.user.create({
-          data: {
-            email: email.toLowerCase(),
-            passwordHash,
-            name: name ?? null,
-          },
-        });
+        const user = created.user;
 
         const { raw, hash } = generateRefreshToken();
         const expiresAt = new Date(

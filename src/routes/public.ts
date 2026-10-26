@@ -6,21 +6,18 @@ import {
   isUpdatePublic,
   type IncidentStatus,
 } from "../core/incident";
-import {
-  createVerificationToken,
-  exposeVerificationToken,
-  hashToken,
-} from "../core/tokens";
-import { systemClock } from "../core/clock";
+import { exposeVerificationToken } from "../core/tokens";
 import { notFoundError, validationError } from "../errors";
 import { param } from "../http-params";
 import { rateLimit, subscribeRateLimitStore } from "../middleware/rate-limit";
 import { validateBody } from "../middleware/validate";
+import {
+  subscribeToPublicProject,
+  verifySubscription,
+} from "../db/subscribe";
 
 const HISTORY_LIMIT = 20;
 const UPDATE_LIMIT = 20;
-const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
-
 const subscribeSchema = z.object({
   email: z.string().email().max(320),
   serviceIds: z.array(z.string().uuid()).min(1).max(50),
@@ -143,39 +140,26 @@ export function publicRoutes(prisma: PrismaClient): Router {
     async (req, res, next) => {
       try {
         const slug = param(req, "projectSlug");
-        const { email: rawEmail, serviceIds } = req.body as z.infer<
-          typeof subscribeSchema
-        >;
-        // One subscriber per address, whatever the letter case: "A@x.io" and "a@x.io" are the same mailbox.
-        const email = rawEmail.trim().toLowerCase();
-        const now = systemClock.now();
-        const project = await prisma.project.findUnique({
-          where: { slug },
-          select: { id: true, name: true },
-        });
-        if (!project) return next(notFoundError());
+        const { email, serviceIds } = req.body as z.infer<typeof subscribeSchema>;
 
-        const publicServices = await prisma.service.findMany({
-          where: {
-            projectId: project.id,
-            id: { in: serviceIds },
-            isPublic: true,
-            enabled: true,
-            deletedAt: null,
-          },
-          select: { id: true, name: true },
+        const result = await subscribeToPublicProject(prisma, {
+          projectSlug: slug,
+          email,
+          serviceIds,
         });
-        if (publicServices.length === 0) {
-          return next(
-            validationError("at least one public enabled service is required", [
-              {
-                path: "serviceIds",
-                message: "at least one public enabled service is required",
-              },
-            ]),
-          );
-        }
-        if (publicServices.length !== serviceIds.length) {
+
+        if (!result.ok) {
+          if (result.reason === "project_not_found") return next(notFoundError());
+          if (result.reason === "no_public_services") {
+            return next(
+              validationError("at least one public enabled service is required", [
+                {
+                  path: "serviceIds",
+                  message: "at least one public enabled service is required",
+                },
+              ]),
+            );
+          }
           return next(
             validationError(
               "one or more services are not public or not found",
@@ -189,91 +173,27 @@ export function publicRoutes(prisma: PrismaClient): Router {
           );
         }
 
-        const { raw, hash } = createVerificationToken();
-        const expiresAt = new Date(now.getTime() + TOKEN_TTL_MS);
-
-        const result = await prisma.$transaction(async (tx) => {
-          let subscriber = await tx.subscriber.findUnique({
-            where: { projectId_email: { projectId: project.id, email } },
-          });
-
-          // Already verified: do not attach services or confirm the address
-          if (subscriber?.verifiedAt) {
-            return {
-              subscriber: null,
-              created: false,
-              token: null as string | null,
-              alreadyVerified: true as const,
-            };
-          }
-
-          if (!subscriber) {
-            subscriber = await tx.subscriber.create({
-              data: {
-                projectId: project.id,
-                email,
-                verificationTokenHash: hash,
-                verificationExpiresAt: expiresAt,
-              },
-            });
-          } else {
-            subscriber = await tx.subscriber.update({
-              where: { id: subscriber.id },
-              data: {
-                verificationTokenHash: hash,
-                verificationExpiresAt: expiresAt,
-              },
-            });
-          }
-
-          for (const svc of publicServices) {
-            await tx.subscriberService.upsert({
-              where: {
-                subscriberId_serviceId: {
-                  subscriberId: subscriber.id,
-                  serviceId: svc.id,
-                },
-              },
-              create: { subscriberId: subscriber.id, serviceId: svc.id },
-              update: {},
-            });
-          }
-
-          const serviceNames = publicServices.map((s) => s.name).join(", ");
-          await tx.outboxMessage.create({
-            data: {
-              projectId: project.id,
-              kind: "subscription_verification",
-              recipientEmail: email,
-              subject: `Verify your subscription to ${project.name}`,
-              body:
-                `Confirm your subscription to ${serviceNames} in ${project.name}. ` +
-                `Use this verification token: ${raw}`,
-            },
-          });
-          return { subscriber, created: true, token: raw };
-        });
-
-        // Generic response when the address is already verified: no leak, no service changes.
-        if ("alreadyVerified" in result && result.alreadyVerified) {
-          res.status(200).json({
-            message:
-              "If this address is subscribed, no change was made. Use your existing subscription.",
+        if (result.alreadyVerified) {
+          res.status(201).json({
+            subscriber: { email: email.trim().toLowerCase(), verified: true },
           });
           return;
         }
 
-        res.status(result.created ? 201 : 200).json({
+        const body: {
+          subscriber: { id: string; email: string; verified: boolean };
+          verificationToken?: string;
+        } = {
           subscriber: {
-            id: result.subscriber!.id,
-            email: result.subscriber!.email,
+            id: result.subscriberId,
+            email: result.email,
             verified: false,
           },
-          // Token only when EXPOSE_VERIFICATION_TOKEN=1 (testing).
-          ...(result.token && exposeVerificationToken()
-            ? { verificationToken: result.token }
-            : {}),
-        });
+        };
+        if (exposeVerificationToken()) {
+          body.verificationToken = result.verificationToken;
+        }
+        res.status(201).json(body);
       } catch (err) {
         next(err);
       }
@@ -286,40 +206,8 @@ export function publicRoutes(prisma: PrismaClient): Router {
     async (req, res, next) => {
       try {
         const { token } = req.body as z.infer<typeof verifySchema>;
-        const hash = hashToken(token);
-        const now = systemClock.now();
-        const subscriber = await prisma.subscriber.findFirst({
-          where: { verificationTokenHash: hash },
-        });
-        if (
-          !subscriber ||
-          !subscriber.verificationExpiresAt ||
-          subscriber.verificationExpiresAt.getTime() < now.getTime() ||
-          subscriber.verifiedAt
-        ) {
-          return res.status(410).json({
-            error: {
-              code: "GONE",
-              message: "Verification token is invalid or has already been used",
-            },
-          });
-        }
-        // The token is single-use: the update applies only while it is still unused, so of two simultaneous
-        // requests with the same token exactly one succeeds.
-        const claimed = await prisma.subscriber.updateMany({
-          where: {
-            id: subscriber.id,
-            verificationTokenHash: hash,
-            verifiedAt: null,
-            verificationExpiresAt: { gte: now },
-          },
-          data: {
-            verifiedAt: now,
-            verificationTokenHash: null,
-            verificationExpiresAt: null,
-          },
-        });
-        if (claimed.count !== 1) {
+        const result = await verifySubscription(prisma, { token });
+        if (!result.ok) {
           return res.status(410).json({
             error: {
               code: "GONE",
@@ -329,8 +217,8 @@ export function publicRoutes(prisma: PrismaClient): Router {
         }
         res.json({
           subscriber: {
-            id: subscriber.id,
-            email: subscriber.email,
+            id: result.subscriber.id,
+            email: result.subscriber.email,
             verified: true,
           },
         });
