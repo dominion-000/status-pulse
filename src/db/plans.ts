@@ -101,7 +101,8 @@ export async function upgradePlan(
       where: { id: args.projectId },
       include: { plan: true },
     });
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(
+      async (tx) => {
       await lockProject(tx, args.projectId);
       const services = await tx.service.count({
         where: { projectId: args.projectId, deletedAt: null },
@@ -141,7 +142,9 @@ export async function upgradePlan(
         },
       });
       return { payment: created } as const;
-    });
+    },
+      { maxWait: 15_000, timeout: 30_000 },
+    );
     if ("over" in result) return { kind: "over_limit", message: result.over };
     const payment = result.payment;
     return {

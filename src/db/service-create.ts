@@ -44,7 +44,8 @@ export async function createService(
     hasCredentials: credentialsEnc !== null,
   };
 
-  return prisma.$transaction(async (tx): Promise<CreateServiceOutcome> => {
+  return prisma.$transaction(
+    async (tx): Promise<CreateServiceOutcome> => {
     await lockProject(tx, projectId);
     const project = await tx.project.findUniqueOrThrow({
       where: { id: projectId },
@@ -92,5 +93,7 @@ export async function createService(
       },
     });
     return { kind: "ok", service };
-  });
+  },
+    { maxWait: 15_000, timeout: 30_000 },
+  );
 }

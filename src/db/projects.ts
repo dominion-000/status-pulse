@@ -72,7 +72,8 @@ export async function inviteMember(
   });
   if (!user) return { kind: "no_user" };
 
-  return prisma.$transaction(async (tx): Promise<InviteOutcome> => {
+  return prisma.$transaction(
+    async (tx): Promise<InviteOutcome> => {
     await lockProject(tx, args.projectId);
     const existing = await tx.membership.findUnique({
       where: { projectId_userId: { projectId: args.projectId, userId: user.id } },
@@ -110,5 +111,7 @@ export async function inviteMember(
       user: { id: user.id, email: user.email },
       role: args.role,
     };
-  });
+  },
+    { maxWait: 15_000, timeout: 30_000 },
+  );
 }
