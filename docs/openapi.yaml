@@ -18,6 +18,10 @@ tags:
   - name: Services
   - name: Status
   - name: Incidents
+  - name: Alerts
+  - name: Plans
+  - name: Public
+  - name: Admin
 
 security:
   - bearerAuth: []
@@ -687,6 +691,301 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /projects/{projectId}/alerts:
+    get:
+      tags: [Alerts]
+      summary: List alerts for a project
+      description: Requires Responder or higher. Optional filters serviceId and state.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: serviceId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: state
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Alerts with acknowledgement and delivery messages.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [alerts]
+                properties:
+                  alerts:
+                    type: array
+                    items: { $ref: "#/components/schemas/Alert" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /projects/{projectId}/alerts/{alertId}/acknowledge:
+    post:
+      tags: [Alerts]
+      summary: Acknowledge an alert
+      description: Idempotent. Does not mark outbox messages as delivered.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: alertId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Acknowledgement recorded or already present.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Alert" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /projects/{projectId}/alerts/{alertId}/retry:
+    post:
+      tags: [Alerts]
+      summary: Retry failed deliveries for an alert
+      description: Re-queues undelivered outbox messages for the dispatcher.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: alertId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Retry accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  retried: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /projects/{projectId}/plans:
+    get:
+      tags: [Plans]
+      summary: List available plans and the project current plan
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Plans and current selection.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plans, current]
+                properties:
+                  plans:
+                    type: array
+                    items: { $ref: "#/components/schemas/Plan" }
+                  current: { $ref: "#/components/schemas/Plan" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /projects/{projectId}/plan:
+    post:
+      tags: [Plans]
+      summary: Upgrade or change plan
+      description: >
+        Requires Idempotency-Key header. Simulated payment in development;
+        a failed payment leaves the plan unchanged and records the failure.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planName]
+              properties:
+                planName: { type: string, enum: [free, pro] }
+      responses:
+        "200":
+          description: Idempotent replay of a previous successful upgrade.
+        "201":
+          description: Plan changed.
+        "409":
+          description: Plan change refused (over limit or conflicting key).
+        "422": { $ref: "#/components/responses/Validation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /public/{projectSlug}:
+    get:
+      tags: [Public]
+      summary: Public status page data
+      security: []
+      parameters:
+        - name: projectSlug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Public services, overall status and public incidents.
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /public/{projectSlug}/subscribe:
+    post:
+      tags: [Public]
+      summary: Subscribe an email to public incident updates
+      security: []
+      parameters:
+        - name: projectSlug
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, serviceIds]
+              properties:
+                email: { type: string, format: email }
+                serviceIds:
+                  type: array
+                  items: { type: string, format: uuid }
+                  minItems: 1
+      responses:
+        "201":
+          description: Subscription created; verification email queued.
+        "422": { $ref: "#/components/responses/Validation" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /public/subscriptions/verify:
+    post:
+      tags: [Public]
+      summary: Verify a subscription with the one-time token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Subscription verified.
+        "410":
+          description: Token already used or expired.
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /admin/scheduler-failures:
+    get:
+      tags: [Admin]
+      summary: List recent scheduler failures
+      description: Platform administrator only (SP-08.1, SP-08.4).
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Failure rows.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/jobs:
+    get:
+      tags: [Admin]
+      summary: List check jobs with elevated attempts or a given status
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: minAttempts
+          in: query
+          schema: { type: integer, minimum: 0, default: 1 }
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Job rows.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/outbox:
+    get:
+      tags: [Admin]
+      summary: List undelivered outbox messages
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: failed
+          in: query
+          description: When true, only messages with attempts greater than zero.
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Outbox rows.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/audit:
+    get:
+      tags: [Admin]
+      summary: Query the audit trail
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: projectId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: action
+          in: query
+          schema: { type: string }
+        - name: entityType
+          in: query
+          schema: { type: string }
+        - name: actorUserId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: accessChanges
+          in: query
+          description: When true, restrict to membership, role, plan and invite actions.
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Audit entries.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: List users
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: User rows including isAdmin.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+
 components:
   securitySchemes:
     bearerAuth:
@@ -744,6 +1043,21 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message]
+                properties:
+                  code: { type: string, example: TOO_MANY_REQUESTS }
+                  message: { type: string }
+
     NotFound:
       description: The resource does not exist, or the caller is not a member of the project.
       content:
@@ -1067,6 +1381,33 @@ components:
           description: Derived. True only when the update is marked public and its incident is public.
         actorUserId: { type: string, format: uuid, nullable: true }
         createdAt: { type: string, format: date-time }
+
+    Plan:
+      type: object
+      required: [id, name, maxServices, maxMembers, priceCents]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        maxServices: { type: integer }
+        maxMembers: { type: integer }
+        priceCents: { type: integer }
+
+    Alert:
+      type: object
+      required: [id, projectId, serviceId, incidentId, state, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        serviceId: { type: string, format: uuid }
+        incidentId: { type: string, format: uuid }
+        state: { type: string }
+        createdAt: { type: string, format: date-time }
+        acknowledgement:
+          type: object
+          nullable: true
+        messages:
+          type: array
+          items: { type: object }
 
     IncidentWithUpdates:
       allOf:
