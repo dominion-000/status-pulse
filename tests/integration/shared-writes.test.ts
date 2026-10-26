@@ -114,7 +114,7 @@ describe.skipIf(!hasTestDb)("shared write paths (UI bypass closure)", () => {
       where: { action: "alert.acknowledge", entityId: alertId },
     });
     expect(audits.length).toBe(1);
-    expect(audits[0].actorUserId).toBe(ownerId);
+    expect(audits[0]?.actorUserId).toBe(ownerId);
   });
 
   it("API acknowledge returns 200 on second call and keeps a single audit", async () => {
