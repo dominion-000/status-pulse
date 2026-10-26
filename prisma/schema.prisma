@@ -12,6 +12,7 @@ model User {
   email        String         @unique
   passwordHash String         @map("password_hash")
   name         String?
+  isAdmin      Boolean        @default(false) @map("is_admin")
   createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz
 
