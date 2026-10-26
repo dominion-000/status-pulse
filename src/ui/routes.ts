@@ -7,23 +7,25 @@ import {
   isUpdatePublic,
   type IncidentStatus,
 } from "../core/incident";
-import {
-  createVerificationToken,
-  exposeVerificationToken,
-  hashToken,
-} from "../core/tokens";
+import { exposeVerificationToken } from "../core/tokens";
 import { createProjectSchema } from "../core/project-input";
 import { createServiceSchema } from "../core/service-config";
 import { createProject } from "../db/projects";
 import { createService } from "../db/service-create";
 import { upgradePlan } from "../db/plans";
+import { acknowledgeAlert } from "../db/acknowledge-alert";
+import {
+  subscribeToPublicProject,
+  verifySubscription,
+} from "../db/subscribe";
+import { registerUser } from "../db/register-user";
 import {
   authRateLimitStore,
   rateLimit,
   subscribeRateLimitStore,
 } from "../middleware/rate-limit";
 import { systemClock } from "../core/clock";
-import { hashPassword, verifyPassword } from "../core/password";
+import { verifyPassword } from "../core/password";
 import { signAccessToken } from "../auth/tokens";
 import { clearTokenCookie, readUserId, setTokenCookie } from "./auth-cookie";
 import { renderPage } from "./render";
@@ -263,98 +265,58 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
         }, 400);
       }
 
-      const publicServices = await prisma.service.findMany({
-        where: {
-          projectId: project.id,
-          id: { in: ids },
-          isPublic: true,
-          enabled: true,
-          deletedAt: null,
-        },
-        select: { id: true, name: true },
+      const result = await subscribeToPublicProject(prisma, {
+        projectSlug: slug,
+        email,
+        serviceIds: ids,
       });
 
-      if (!publicServices.length) {
+      if (!result.ok) {
+        const services = await prisma.service.findMany({
+          where: {
+            projectId: project.id,
+            isPublic: true,
+            enabled: true,
+            deletedAt: null,
+          },
+          select: { id: true, name: true },
+        });
+        const message =
+          result.reason === "no_public_services"
+            ? "Select at least one public service"
+            : "One or more services are not public or not found";
         return renderPage(res, "public/subscribe", {
           title: "Subscribe",
-          error: "Select at least one public service",
+          error: message,
           project,
-          services: await prisma.service.findMany({
-            where: {
-              projectId: project.id,
-              isPublic: true,
-              enabled: true,
-              deletedAt: null,
-            },
-            select: { id: true, name: true },
-          }),
+          services,
           brandHref: `/status/${slug}`,
           nav: publicNav(slug),
         }, 400);
       }
 
-      const now = systemClock.now();
-      const { raw, hash } = createVerificationToken();
-      const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-
-      await prisma.$transaction(async (tx) => {
-        let subscriber = await tx.subscriber.findUnique({
-          where: {
-            projectId_email: { projectId: project.id, email },
-          },
+      if (result.alreadyVerified) {
+        return renderPage(res, "public/subscribe", {
+          title: "Subscribe",
+          project,
+          services: [],
+          done: true,
+          brandHref: `/status/${slug}`,
+          nav: publicNav(slug),
         });
-        // Match API: verified address — no service changes, no confirmation.
-        if (subscriber?.verifiedAt) {
-          return;
-        }
-        if (!subscriber) {
-          subscriber = await tx.subscriber.create({
-            data: {
-              projectId: project.id,
-              email,
-              verificationTokenHash: hash,
-              verificationExpiresAt: expiresAt,
-            },
-          });
-        } else {
-          subscriber = await tx.subscriber.update({
-            where: { id: subscriber.id },
-            data: {
-              verificationTokenHash: hash,
-              verificationExpiresAt: expiresAt,
-            },
-          });
-        }
-        for (const svc of publicServices) {
-          await tx.subscriberService.upsert({
-            where: {
-              subscriberId_serviceId: {
-                subscriberId: subscriber.id,
-                serviceId: svc.id,
-              },
-            },
-            create: { subscriberId: subscriber.id, serviceId: svc.id },
-            update: {},
-          });
-        }
-        const names = publicServices.map((s) => s.name).join(", ");
-        await tx.outboxMessage.create({
-          data: {
-            projectId: project.id,
-            kind: "subscription_verification",
-            recipientEmail: email,
-            subject: `Verify your subscription to ${project.name}`,
-            body: `Confirm subscription to ${names}. Token: ${raw}`,
-          },
-        });
-      });
+      }
 
       renderPage(res, "public/subscribe", {
         title: "Subscribe",
         project,
-        services: publicServices,
+        services: result.serviceNames.map((name, i) => ({
+          id: ids[i] ?? "",
+          name,
+        })),
         done: true,
-        verificationToken: exposeVerificationToken() ? raw : undefined,
+        verificationToken: exposeVerificationToken()
+          ? result.verificationToken
+          : undefined,
         brandHref: `/status/${slug}`,
         nav: publicNav(slug),
       });
@@ -382,50 +344,29 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
 
   r.post("/status/verify", async (req, res, next) => {
     try {
-      const token = String(parseBody(req).token ?? "");
-      const hash = hashToken(token);
-      const now = systemClock.now();
-      const subscriber = await prisma.subscriber.findFirst({
-        where: { verificationTokenHash: hash },
-      });
-      if (
-        !subscriber ||
-        !subscriber.verificationExpiresAt ||
-        subscriber.verificationExpiresAt.getTime() < now.getTime() ||
-        subscriber.verifiedAt
-      ) {
+      const body = parseBody(req);
+      const token = String(body.token ?? "").trim();
+      if (!token) {
         return renderPage(res, "public/verify", {
-          title: "Verify",
-          error: "Token is invalid or already used",
+          title: "Verify subscription",
+          error: "Token is required",
           brandHref: "/",
           nav: [],
-        }, 410);
+        }, 400);
       }
-      const claimed = await prisma.subscriber.updateMany({
-        where: {
-          id: subscriber.id,
-          verificationTokenHash: hash,
-          verifiedAt: null,
-          verificationExpiresAt: { gte: now },
-        },
-        data: {
-          verifiedAt: now,
-          verificationTokenHash: null,
-          verificationExpiresAt: null,
-        },
-      });
-      if (claimed.count !== 1) {
+      const result = await verifySubscription(prisma, { token });
+      if (!result.ok) {
         return renderPage(res, "public/verify", {
-          title: "Verify",
-          error: "Token is invalid or already used",
+          title: "Verify subscription",
+          error: "This verification link is invalid or has already been used",
           brandHref: "/",
           nav: [],
         }, 410);
       }
       renderPage(res, "public/verify", {
-        title: "Verify",
-        verified: true,
-        email: subscriber.email,
+        title: "Verify subscription",
+        done: true,
+        email: result.subscriber.email,
         brandHref: "/",
         nav: [],
       });
@@ -433,8 +374,6 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
       next(err);
     }
   });
-
-  // --- Auth ---
 
   r.get("/app/login", (req, res) => {
     if (readUserId(req, config)) return res.redirect("/app/projects");
@@ -487,29 +426,26 @@ export function uiRoutes(prisma: PrismaClient, config: Config): Router {
       const body = parseBody(req);
       const email = String(body.email ?? "").trim().toLowerCase();
       const password = String(body.password ?? "");
-      if (password.length < 8) {
-        return renderPage(res, "auth/register", {
-          title: "Register",
-          error: "Password must be at least 8 characters",
-          brandHref: "/app/register",
-          nav: [{ href: "/app/login", label: "Sign in", active: false }],
-        }, 400);
-      }
-      const existing = await prisma.user.findUnique({ where: { email } });
-      if (existing) {
-        return renderPage(res, "auth/register", {
-          title: "Register",
-          error: "Email already registered",
-          brandHref: "/app/register",
-          nav: [{ href: "/app/login", label: "Sign in", active: false }],
-        }, 409);
-      }
-      const passwordHash = await hashPassword(password);
-      const user = await prisma.user.create({
-        data: { email, passwordHash },
+      const created = await registerUser(prisma, {
+        email,
+        password,
+        strictPassword: false,
       });
+      if (!created.ok) {
+        const status = created.reason === "email_taken" ? 409 : 400;
+        const error =
+          created.reason === "email_taken"
+            ? "Email already registered"
+            : (created.passwordMessages?.[0] ?? "Invalid password");
+        return renderPage(res, "auth/register", {
+          title: "Register",
+          error,
+          brandHref: "/app/register",
+          nav: [{ href: "/app/login", label: "Sign in", active: false }],
+        }, status);
+      }
       const token = signAccessToken(
-        user.id,
+        created.user.id,
         config.jwtSecret,
         config.accessTokenTtlSeconds,
       );
@@ -830,7 +766,7 @@ r.get("/app/projects/:projectId/alerts", async (req, res, next) => {
     }
   });
 
-  r.post(
+    r.post(
     "/app/projects/:projectId/alerts/:alertId/acknowledge",
     async (req, res, next) => {
       try {
@@ -846,47 +782,11 @@ r.get("/app/projects/:projectId/alerts", async (req, res, next) => {
         if (!membership || membership.role === "Viewer") {
           return res.redirect("/app/projects");
         }
-        const alert = await prisma.alert.findFirst({
-          where: { id: alertId, projectId },
-          include: { acknowledgement: true },
+        await acknowledgeAlert(prisma, {
+          projectId,
+          alertId,
+          actorUserId: user.id,
         });
-        if (alert && !alert.acknowledgement) {
-          await prisma.acknowledgement.create({
-            data: { alertId, actorUserId: user.id },
-          });
-        }
-        res.redirect(`/app/projects/${projectId}/alerts`);
-      } catch (err) {
-        next(err);
-      }
-    },
-  );
-
-  r.post(
-    "/app/projects/:projectId/alerts/:alertId/retry",
-    async (req, res, next) => {
-      try {
-        const user = await requireUiUser(req);
-        if (!user) return res.redirect("/app/login");
-        const projectId = String(req.params.projectId);
-        const alertId = String(req.params.alertId);
-        const membership = await prisma.membership.findUnique({
-          where: {
-            projectId_userId: { projectId, userId: user.id },
-          },
-        });
-        if (!membership || membership.role === "Viewer") {
-          return res.redirect("/app/projects");
-        }
-        const now = systemClock.now();
-        await prisma.$executeRaw`
-          UPDATE outbox_messages
-             SET attempts = 0,
-                 next_attempt_at = ${now},
-                 lease_until = NULL,
-                 last_error = NULL
-           WHERE alert_id = ${alertId}::uuid
-             AND delivered_at IS NULL`;
         res.redirect(`/app/projects/${projectId}/alerts`);
       } catch (err) {
         next(err);
