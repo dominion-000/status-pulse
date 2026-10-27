@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from "../../prisma/generated";
+import { processPlanPayment } from "../payments/paystack";
 import { lockProject } from "./project-lock";
 
 export interface PlanView {
@@ -29,7 +30,7 @@ const planView = (p: PlanView): PlanView => ({
 });
 
 /**
- * Plan upgrade with an Idempotency-Key and a simulated payment (SP-07.4, SP-07.5). The API and the browser UI both
+ * Plan upgrade with an Idempotency-Key and Paystack payment (SP-07.4, SP-07.5). The API and the browser UI both
  * call this, so they cannot drift apart. The unique (project, key) constraint is the guard: when two requests with
  * the same key race, the loser hits the constraint and answers with what the winner stored instead of failing.
  * A failed payment is recorded and leaves the plan unchanged; the same key then keeps answering with that failure,
@@ -84,7 +85,17 @@ export async function upgradePlan(
   if (earlier) return earlier;
 
   try {
-    if (args.failPayments) {
+    const actor = await prisma.user.findUnique({ where: { id: args.actorUserId } });
+    const pay = await processPlanPayment(
+      {
+        email: actor?.email ?? "billing@example.com",
+        amountCents: target.priceCents,
+        reference: `${args.projectId.slice(0, 8)}-${args.key}`.slice(0, 100),
+        planName: target.name,
+      },
+      { failPayments: args.failPayments },
+    );
+    if (!pay.ok) {
       await prisma.paymentAttempt.create({
         data: {
           projectId: args.projectId,
@@ -92,10 +103,13 @@ export async function upgradePlan(
           idempotencyKey: args.key,
           status: "failed",
           amountCents: target.priceCents,
-          errorMessage: "PAYMENT_FAIL_ALL is set",
+          errorMessage: pay.errorMessage ?? "Payment failed",
         },
       });
-      return { kind: "payment_failed", message: "Simulated payment failed" };
+      return {
+        kind: "payment_failed",
+        message: pay.errorMessage ?? "Payment failed",
+      };
     }
     const project = await prisma.project.findUniqueOrThrow({
       where: { id: args.projectId },
@@ -138,6 +152,8 @@ export async function upgradePlan(
             from: project.plan.name,
             to: target.name,
             paymentId: created.id,
+            paymentProvider: pay.provider,
+            paymentReference: pay.reference,
           },
         },
       });
