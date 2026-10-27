@@ -7,9 +7,17 @@
   <link rel="stylesheet" href="/ui/assets/styles.css" />
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to content</a>
   <div class="wrap">
     <header class="app-header">
-      <a class="brand" href="<%= typeof brandHref !== 'undefined' ? brandHref : '/' %>">Status Pulse</a>
+      <a class="brand" href="<%= typeof brandHref !== 'undefined' ? brandHref : '/' %>">
+        <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="7" cy="14" r="2.2" fill="currentColor" opacity="0.55"/>
+          <circle cx="12" cy="9" r="2.8" fill="currentColor" opacity="0.8"/>
+          <circle cx="17" cy="11" r="3.4" fill="currentColor"/>
+        </svg>
+        Status Pulse
+      </a>
       <nav>
         <% if (typeof nav !== 'undefined' && nav) { %>
           <% nav.forEach(function (item) { %>
@@ -35,7 +43,7 @@
       <div class="flash flash-ok"><%= success %></div>
     <% } %>
 
-    <main>
+    <main id="main">
       <%- body %>
     </main>
 
