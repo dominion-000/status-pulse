@@ -2,6 +2,7 @@ import { systemClock } from "../core/clock";
 import { loadConfig } from "../config";
 import type { Pool, PoolClient } from "pg";
 import { getPool, disconnectDb } from "../db/client";
+import { onGracefulShutdown } from "../core/shutdown";
 import {
   claimOutboxMessage,
   markOutboxDelivered,
@@ -72,13 +73,8 @@ async function main(): Promise<void> {
   }
 }
 
-process.on("SIGINT", async () => {
+onGracefulShutdown("dispatcher", async () => {
   await disconnectDb();
-  process.exit(0);
-});
-process.on("SIGTERM", async () => {
-  await disconnectDb();
-  process.exit(0);
 });
 
 if (require.main === module) {

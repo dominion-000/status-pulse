@@ -1,5 +1,6 @@
 import { loadConfig } from "../config";
 import { getPool, getPrisma, disconnectDb } from "../db/client";
+import { onGracefulShutdown } from "../core/shutdown";
 import { schedulerTick } from "../db/jobs";
 import { sweepStatus } from "../db/sweeper";
 import { systemClock } from "../core/clock";
@@ -45,9 +46,8 @@ async function loop(): Promise<void> {
   }
 }
 
-process.on("SIGINT", async () => {
+onGracefulShutdown("scheduler", async () => {
   await disconnectDb();
-  process.exit(0);
 });
 
 loop().catch(async (err) => {

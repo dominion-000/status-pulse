@@ -1,5 +1,6 @@
 import { loadConfig } from "../config";
 import { getPrisma, getPool, disconnectDb } from "../db/client";
+import { onGracefulShutdown } from "../core/shutdown";
 import { claimJob, markJobDone } from "../db/jobs";
 import { recordCheckResult } from "../db/record-result";
 import { systemClock } from "../core/clock";
@@ -92,9 +93,8 @@ async function loop(): Promise<void> {
   }
 }
 
-process.on("SIGINT", async () => {
+onGracefulShutdown("worker", async () => {
   await disconnectDb();
-  process.exit(0);
 });
 
 loop().catch(async (err) => {
