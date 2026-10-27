@@ -81,28 +81,27 @@ Roles are ordered Owner, Responder, Viewer. A caller who is not a member of a pr
 
 Values are read from the environment, and from `.env` through `dotenv`.
 
-| Variable                    | Default  | Purpose                                                                                                    |
-| --------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`              | required | PostgreSQL connection string                                                                               |
-| `CREDENTIALS_ENC_KEY`       | required | 32 bytes, base64. Encrypts endpoint credentials with AES-256-GCM                                           |
-| `JWT_SECRET`                | required | Signs access tokens. At least 32 characters                                                                |
-| `PORT`                      | 3000     | API port                                                                                                   |
-| `ACCESS_TOKEN_TTL_SECONDS`  | 28800    | Access token lifetime in seconds (8 hours). The browser session cookie uses the same value                 |
-| `REFRESH_TOKEN_TTL_DAYS`    | 30       | Refresh token lifetime                                                                                     |
-| `WORKER_LEASE_SECONDS`      | 60       | How long a claimed check job is reserved                                                                   |
-| `WORKER_MAX_ATTEMPTS`       | 5        | Claim attempts before a job is abandoned                                                                   |
-| `DISPATCHER_LEASE_SECONDS`  | 30       | How long a claimed outbox message is reserved                                                              |
-| `DISPATCHER_MAX_ATTEMPTS`   | 6        | Automatic send attempts before a message waits for a manual retry                                          |
-| `TRUST_PROXY_HOPS`          | 0        | Number of proxies in front of the API. Set to `1` behind Render: the rate limit keys on the client address |
-| `EXPOSE_VERIFICATION_TOKEN` | see note | `1` returns the subscription verification token in the response and on the page, `0` never does            |
-| `MAIL_FAIL_ALL`             | 0        | `1` makes every simulated send fail                                                                        |
-| `PAYMENT_FAIL_ALL`          | 0        | `1` makes every simulated payment fail                                                                     |
-| `RATE_LIMIT_DISABLED`       | unset    | `1` switches rate limiting off. Meant for rehearsals; the API logs a warning at start while it is set      |
-| `DATABASE_URL_TEST`         | none     | A separate database for the tests (see Tests)                                                              |
+| Variable                   | Default  | Purpose                                                                                                    |
+| -------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`             | required | PostgreSQL connection string                                                                               |
+| `CREDENTIALS_ENC_KEY`      | required | 32 bytes, base64. Encrypts endpoint credentials with AES-256-GCM                                           |
+| `JWT_SECRET`               | required | Signs access tokens. At least 32 characters                                                                |
+| `PORT`                     | 3000     | API port                                                                                                   |
+| `ACCESS_TOKEN_TTL_SECONDS` | 28800    | Access token lifetime in seconds (8 hours). The browser session cookie uses the same value                 |
+| `REFRESH_TOKEN_TTL_DAYS`   | 30       | Refresh token lifetime                                                                                     |
+| `WORKER_LEASE_SECONDS`     | 60       | How long a claimed check job is reserved                                                                   |
+| `WORKER_MAX_ATTEMPTS`      | 5        | Claim attempts before a job is abandoned                                                                   |
+| `DISPATCHER_LEASE_SECONDS` | 30       | How long a claimed outbox message is reserved                                                              |
+| `DISPATCHER_MAX_ATTEMPTS`  | 6        | Automatic send attempts before a message waits for a manual retry                                          |
+| `TRUST_PROXY_HOPS`         | 0        | Number of proxies in front of the API. Set to `1` behind Render: the rate limit keys on the client address |
+| `RESEND_API_KEY`           | required | Resend API key for dispatcher email (not required only under automated tests)                              |
+| `MAIL_FROM`                | see note | From address registered with Resend                                                                        |
+| `PAYSTACK_SECRET_KEY`      | required | Paystack secret. Plan upgrades fail closed without it outside tests                                        |
+| `PAYSTACK_CURRENCY`        | NGN      | Currency for Paystack initialize                                                                           |
+| `RATE_LIMIT_DISABLED`      | unset    | Ops escape hatch only: `1` turns off rate limits and logs a warning at start                               |
+| `DATABASE_URL_TEST`        | none     | A separate database for the tests (see Tests)                                                              |
 
-`EXPOSE_VERIFICATION_TOKEN`: unset, the token is returned outside production and withheld when `NODE_ENV=production`. The token proves control of the mailbox, so returning it defeats the check. It belongs only in a demonstration, where no mailbox exists. The token is always in the simulated verification message.
-
-Rate limiting applies to register, login and subscribe, in the API and in the browser forms. Register and login (API and browser) share one limit; subscribe (API and browser) has its own, so flooding one flow does not lock out the other. Each limit is 20 requests per hour per client address, held in the memory of one process. The address is `req.ip`, never the `X-Forwarded-For` header, which a client can write.
+Rate limiting applies to register, login and subscribe. Each limit is 20 requests per hour per client address (`req.ip`, never client-written `X-Forwarded-For`).
 
 ## Plans
 
@@ -115,13 +114,11 @@ Every project starts on the free plan. A plan sets the most services and members
 
 Switching to a plan whose limits are below what the project already has is refused with `409`; nothing is recorded, so the same `Idempotency-Key` can be used again after the project has been reduced. The limits are stored in the `plans` table; the pro plan costs $20.00.
 
-## Simulated delivery
+## Email and payments
 
-No real mail or payment provider is used.
-
-- A message to an address on `fail.example` always fails. The dispatcher records the error, retries with backoff of 5 s, 10 s, 20 s and so on up to 5 minutes, and stops after `DISPATCHER_MAX_ATTEMPTS` until an alert's retry is requested.
-- `MAIL_FAIL_ALL=1` fails every send.
-- `PAYMENT_FAIL_ALL=1` fails every plan upgrade. The failed attempt is recorded, the plan stays unchanged, and the same `Idempotency-Key` keeps answering with that failure.
+- **Email:** the dispatcher sends through [Resend](https://resend.com). Set `RESEND_API_KEY` and a verified `MAIL_FROM`. Without a key, sends fail (except in automated tests, which use an in-process sender).
+- **Payments:** plan upgrades call Paystack `transaction/initialize` with `PAYSTACK_SECRET_KEY`. Without a key outside tests, the upgrade is refused and recorded as a failed payment attempt.
+- Delivery failures still use outbox backoff (5 s, 10 s, … up to 5 minutes) and stop after `DISPATCHER_MAX_ATTEMPTS` until a manual alert retry.
 
 ## Tests
 
