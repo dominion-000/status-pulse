@@ -6,6 +6,9 @@ import { recordCheckResult } from "../db/record-result";
 import { systemClock } from "../core/clock";
 import { decryptSecret } from "../core/secrets";
 import { runHttpCheck } from "./http-check";
+import { logWithProcess } from "../core/log";
+process.env.PROCESS_NAME = "worker";
+const log = logWithProcess("worker");
 
 const POLL_MS = 500;
 
@@ -81,7 +84,7 @@ async function processOne(): Promise<boolean> {
 }
 
 async function loop(): Promise<void> {
-  console.log("worker started");
+  log.info("started");
   for (;;) {
     try {
       const worked = await processOne();

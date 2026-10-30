@@ -4,6 +4,9 @@ import { onGracefulShutdown } from "../core/shutdown";
 import { schedulerTick } from "../db/jobs";
 import { sweepStatus } from "../db/sweeper";
 import { systemClock } from "../core/clock";
+import { logWithProcess } from "../core/log";
+process.env.PROCESS_NAME = "scheduler";
+const log = logWithProcess("scheduler");
 
 const TICK_MS = 1000;
 const SWEEP_MS = 5000; // stale results and override expiry only matter to the second, so no need to sweep every tick
@@ -13,7 +16,7 @@ async function loop(): Promise<void> {
   const pool = getPool(config.databaseUrl);
   const prisma = getPrisma(config.databaseUrl);
   let lastSweep = 0;
-  console.log("scheduler started");
+  log.info("started");
 
   for (;;) {
     try {
