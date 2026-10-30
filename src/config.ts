@@ -13,6 +13,8 @@ export interface Config {
   dispatcherLeaseSeconds: number;
   dispatcherMaxAttempts: number;
   port: number;
+  /** Allowed browser origins for CORS (comma-separated env CORS_ORIGIN). Empty = no CORS headers. */
+  corsOrigins: string[];
 }
 
 function intEnv(name: string, fallback: number): number {
@@ -52,5 +54,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dispatcherLeaseSeconds: intEnv("DISPATCHER_LEASE_SECONDS", 30),
     dispatcherMaxAttempts: intEnv("DISPATCHER_MAX_ATTEMPTS", 6),
     port: intEnv("PORT", 3000),
+    corsOrigins: (env.CORS_ORIGIN ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
   };
 }
