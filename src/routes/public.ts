@@ -11,7 +11,11 @@ import { notFoundError, validationError } from "../errors";
 import { param } from "../http-params";
 import { rateLimit, subscribeRateLimitStore } from "../middleware/rate-limit";
 import { validateBody } from "../middleware/validate";
-import { subscribeToPublicProject, verifySubscription } from "../db/subscribe";
+import {
+  subscribeToPublicProject,
+  verifySubscription,
+} from "../db/subscribe";
+import { cacheGet, cacheSet, publicStatusKey } from "../core/cache";
 
 const HISTORY_LIMIT = 20;
 const UPDATE_LIMIT = 20;
@@ -34,6 +38,13 @@ export function publicRoutes(prisma: PrismaClient): Router {
   r.get("/:projectSlug", async (req, res, next) => {
     try {
       const slug = param(req, "projectSlug");
+      const cacheKey = publicStatusKey(slug);
+      const cached = await cacheGet(cacheKey);
+      if (cached) {
+        res.setHeader("X-Cache", "HIT");
+        res.type("json").send(cached);
+        return;
+      }
       const project = await prisma.project.findUnique({
         where: { slug },
         select: {
@@ -83,7 +94,7 @@ export function publicRoutes(prisma: PrismaClient): Router {
         },
       });
       if (!project) return next(notFoundError());
-      res.json({
+      const body = {
         project: { name: project.name, slug: project.slug },
         services: project.services.map((s) => {
           const rawIncident = s.incidents[0] ?? null;
@@ -124,7 +135,11 @@ export function publicRoutes(prisma: PrismaClient): Router {
             })),
           };
         }),
-      });
+      };
+      const payload = JSON.stringify(body);
+      await cacheSet(cacheKey, payload);
+      res.setHeader("X-Cache", "MISS");
+      res.type("json").send(payload);
     } catch (err) {
       next(err);
     }
@@ -137,9 +152,7 @@ export function publicRoutes(prisma: PrismaClient): Router {
     async (req, res, next) => {
       try {
         const slug = param(req, "projectSlug");
-        const { email, serviceIds } = req.body as z.infer<
-          typeof subscribeSchema
-        >;
+        const { email, serviceIds } = req.body as z.infer<typeof subscribeSchema>;
 
         const result = await subscribeToPublicProject(prisma, {
           projectSlug: slug,
@@ -148,19 +161,15 @@ export function publicRoutes(prisma: PrismaClient): Router {
         });
 
         if (!result.ok) {
-          if (result.reason === "project_not_found")
-            return next(notFoundError());
+          if (result.reason === "project_not_found") return next(notFoundError());
           if (result.reason === "no_public_services") {
             return next(
-              validationError(
-                "at least one public enabled service is required",
-                [
-                  {
-                    path: "serviceIds",
-                    message: "at least one public enabled service is required",
-                  },
-                ],
-              ),
+              validationError("at least one public enabled service is required", [
+                {
+                  path: "serviceIds",
+                  message: "at least one public enabled service is required",
+                },
+              ]),
             );
           }
           return next(
