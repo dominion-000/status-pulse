@@ -41,7 +41,8 @@ export function adminRoutes(prisma: PrismaClient, config: Config) {
     try {
       const limit = Math.min(Number(req.query.limit) || 50, 200);
       const minAttempts = Math.max(Number(req.query.minAttempts) || 1, 0);
-      const status = typeof req.query.status === "string" ? req.query.status : undefined;
+      const status =
+        typeof req.query.status === "string" ? req.query.status : undefined;
 
       const where: {
         attempts?: { gte: number };
@@ -82,7 +83,8 @@ export function adminRoutes(prisma: PrismaClient, config: Config) {
   r.get("/outbox", ...auth, async (req, res, next) => {
     try {
       const limit = Math.min(Number(req.query.limit) || 50, 200);
-      const onlyFailed = req.query.failed === "1" || req.query.failed === "true";
+      const onlyFailed =
+        req.query.failed === "1" || req.query.failed === "true";
 
       const rows = await prisma.outboxMessage.findMany({
         where: onlyFailed
@@ -139,17 +141,26 @@ export function adminRoutes(prisma: PrismaClient, config: Config) {
         entityType?: string;
         actorUserId?: string;
       } = {};
-      if (typeof req.query.projectId === "string") where.projectId = req.query.projectId;
+      if (typeof req.query.projectId === "string")
+        where.projectId = req.query.projectId;
       if (typeof req.query.action === "string") where.action = req.query.action;
-      if (typeof req.query.entityType === "string") where.entityType = req.query.entityType;
-      if (typeof req.query.actorUserId === "string") where.actorUserId = req.query.actorUserId;
-      if (req.query.accessChanges === "1" || req.query.accessChanges === "true") {
+      if (typeof req.query.entityType === "string")
+        where.entityType = req.query.entityType;
+      if (typeof req.query.actorUserId === "string")
+        where.actorUserId = req.query.actorUserId;
+      if (
+        req.query.accessChanges === "1" ||
+        req.query.accessChanges === "true"
+      ) {
         // Convenience filter for role / membership / plan changes
         where.action = { startsWith: "" }; // will be replaced below
       }
 
       let rows;
-      if (req.query.accessChanges === "1" || req.query.accessChanges === "true") {
+      if (
+        req.query.accessChanges === "1" ||
+        req.query.accessChanges === "true"
+      ) {
         rows = await prisma.auditLog.findMany({
           where: {
             OR: [
