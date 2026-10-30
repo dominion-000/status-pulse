@@ -8,7 +8,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node scripts/copy-ui.mjs",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-prisma-generated.mjs",
+    "copy:prisma": "node scripts/copy-prisma-generated.mjs",
     "build:watch": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
@@ -17,14 +18,14 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:validate": "prisma validate",
     "seed": "node dist/scripts/seed.js",
-    "start:api": "node dist/main.js",
-    "start:scheduler": "node dist/scheduler/main.js",
-    "start:worker": "node dist/worker/main.js",
-    "start:dispatcher": "node dist/dispatcher/main.js",
+    "start:api": "node dist/src/main.js",
+    "start:scheduler": "node dist/src/scheduler/main.js",
+    "start:worker": "node dist/src/worker/main.js",
+    "start:dispatcher": "node dist/src/dispatcher/main.js",
     "start:all": "node dist/scripts/launcher.js",
-    "dev:api": "node --watch dist/main.js",
-    "dev:scheduler": "node --watch dist/scheduler/main.js",
-    "dev:worker": "node --watch dist/worker/main.js"
+    "dev:api": "node --watch dist/src/main.js",
+    "dev:scheduler": "node --watch dist/src/scheduler/main.js",
+    "dev:worker": "node --watch dist/src/worker/main.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

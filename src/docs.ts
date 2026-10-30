@@ -7,9 +7,10 @@ import { parse as parseYaml } from "yaml";
 /**
  * Serves the OpenAPI document and an interactive Swagger UI.
  * UI at /api/docs, raw contract at /api/v1/openapi.yaml.
+ * Contract file: src/doc/openapi.yaml
  */
 export function mountApiDocs(app: Express): void {
-  const yamlPath = path.join(process.cwd(), "docs", "openapi.yaml");
+  const yamlPath = path.join(process.cwd(), "src", "doc", "openapi.yaml");
   let document: object;
   try {
     document = parseYaml(readFileSync(yamlPath, "utf8")) as object;

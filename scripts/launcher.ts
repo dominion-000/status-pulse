@@ -1,6 +1,6 @@
 /**
- * Single-process launcher for the shared Render (or local) environment.
- * Starts API, scheduler and worker as child processes.
+ * Single-process launcher for Render (or local).
+ * Starts API, scheduler, worker, dispatcher as child processes.
  */
 import { spawn } from "node:child_process";
 import path from "node:path";
@@ -19,7 +19,7 @@ function start(name: string, entry: string): void {
   console.log(`started ${name}`);
 }
 
-start("api", "main.js");
-start("scheduler", "scheduler/main.js");
-start("worker", "worker/main.js");
-start("dispatcher", "dispatcher/main.js");
+start("api", "src/main.js");
+start("scheduler", "src/scheduler/main.js");
+start("worker", "src/worker/main.js");
+start("dispatcher", "src/dispatcher/main.js");

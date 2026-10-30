@@ -3,9 +3,7 @@
     "target": "ES2023",
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "types": [
-      "node"
-    ],
+    "types": ["node"],
     "rootDir": ".",
     "outDir": "dist",
     "strict": true,
@@ -18,8 +16,5 @@
     "forceConsistentCasingInFileNames": true,
     "sourceMap": true
   },
-  "include": [
-    "src",
-    "tests"
-  ]
+  "include": ["src", "scripts", "tests"]
 }
