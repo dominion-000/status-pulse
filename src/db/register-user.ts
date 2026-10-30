@@ -4,7 +4,12 @@ import { hashPassword, passwordIssues } from "../core/password";
 export type RegisterUserResult =
   | {
       ok: true;
-      user: { id: string; email: string; name: string | null };
+      user: {
+        id: string;
+        email: string;
+        name: string | null;
+        isAdmin: boolean;
+      };
     }
   | {
       ok: false;
@@ -57,6 +62,11 @@ export async function registerUser(
   });
   return {
     ok: true,
-    user: { id: user.id, email: user.email, name: user.name },
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      isAdmin: user.isAdmin,
+    },
   };
 }
