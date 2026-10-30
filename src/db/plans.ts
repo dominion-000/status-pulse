@@ -49,7 +49,9 @@ export async function upgradePlan(
     failPayments: boolean;
   },
 ): Promise<UpgradeOutcome> {
-  const target = await prisma.plan.findUnique({ where: { name: args.planName } });
+  const target = await prisma.plan.findUnique({
+    where: { name: args.planName },
+  });
   if (!target) return { kind: "unknown_plan" };
 
   const replay = async (): Promise<UpgradeOutcome | null> => {
@@ -85,7 +87,9 @@ export async function upgradePlan(
   if (earlier) return earlier;
 
   try {
-    const actor = await prisma.user.findUnique({ where: { id: args.actorUserId } });
+    const actor = await prisma.user.findUnique({
+      where: { id: args.actorUserId },
+    });
     const pay = await processPlanPayment(
       {
         email: actor?.email ?? "billing@example.com",
@@ -117,48 +121,48 @@ export async function upgradePlan(
     });
     const result = await prisma.$transaction(
       async (tx) => {
-      await lockProject(tx, args.projectId);
-      const services = await tx.service.count({
-        where: { projectId: args.projectId, deletedAt: null },
-      });
-      const members = await tx.membership.count({
-        where: { projectId: args.projectId },
-      });
-      if (services > target.maxServices || members > target.maxMembers)
-        return {
-          over: `The project has ${services} services and ${members} members; the ${target.name} plan allows ${target.maxServices} and ${target.maxMembers}`,
-        } as const;
-      const created = await tx.paymentAttempt.create({
-        data: {
-          projectId: args.projectId,
-          planId: target.id,
-          idempotencyKey: args.key,
-          status: "succeeded",
-          amountCents: target.priceCents,
-        },
-      });
-      await tx.project.update({
-        where: { id: args.projectId },
-        data: { planId: target.id },
-      });
-      await tx.auditLog.create({
-        data: {
-          projectId: args.projectId,
-          actorUserId: args.actorUserId,
-          action: "plan.upgraded",
-          entityType: "project",
-          entityId: args.projectId,
-          details: {
-            from: project.plan.name,
-            to: target.name,
-            paymentId: created.id,
-            paymentProvider: pay.provider,
-            paymentReference: pay.reference,
+        await lockProject(tx, args.projectId);
+        const services = await tx.service.count({
+          where: { projectId: args.projectId, deletedAt: null },
+        });
+        const members = await tx.membership.count({
+          where: { projectId: args.projectId },
+        });
+        if (services > target.maxServices || members > target.maxMembers)
+          return {
+            over: `The project has ${services} services and ${members} members; the ${target.name} plan allows ${target.maxServices} and ${target.maxMembers}`,
+          } as const;
+        const created = await tx.paymentAttempt.create({
+          data: {
+            projectId: args.projectId,
+            planId: target.id,
+            idempotencyKey: args.key,
+            status: "succeeded",
+            amountCents: target.priceCents,
           },
-        },
-      });
-      return { payment: created } as const;
-    },
+        });
+        await tx.project.update({
+          where: { id: args.projectId },
+          data: { planId: target.id },
+        });
+        await tx.auditLog.create({
+          data: {
+            projectId: args.projectId,
+            actorUserId: args.actorUserId,
+            action: "plan.upgraded",
+            entityType: "project",
+            entityId: args.projectId,
+            details: {
+              from: project.plan.name,
+              to: target.name,
+              paymentId: created.id,
+              paymentProvider: pay.provider,
+              paymentReference: pay.reference,
+            },
+          },
+        });
+        return { payment: created } as const;
+      },
       { maxWait: 15_000, timeout: 30_000 },
     );
     if ("over" in result) return { kind: "over_limit", message: result.over };

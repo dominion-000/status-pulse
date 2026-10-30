@@ -1,8 +1,5 @@
 import type { PrismaClient } from "../../prisma/generated";
-import {
-  createVerificationToken,
-  hashToken,
-} from "../core/tokens";
+import { createVerificationToken, hashToken } from "../core/tokens";
 import type { Clock } from "../core/clock";
 import { systemClock } from "../core/clock";
 

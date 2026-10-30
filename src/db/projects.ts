@@ -2,7 +2,10 @@ import { Prisma, type PrismaClient } from "../../prisma/generated";
 import { lockProject } from "./project-lock";
 
 export type CreateProjectOutcome =
-  | { kind: "ok"; project: Awaited<ReturnType<PrismaClient["project"]["create"]>> }
+  | {
+      kind: "ok";
+      project: Awaited<ReturnType<PrismaClient["project"]["create"]>>;
+    }
   | { kind: "slug_taken" }
   | { kind: "plans_missing" };
 
@@ -74,44 +77,46 @@ export async function inviteMember(
 
   return prisma.$transaction(
     async (tx): Promise<InviteOutcome> => {
-    await lockProject(tx, args.projectId);
-    const existing = await tx.membership.findUnique({
-      where: { projectId_userId: { projectId: args.projectId, userId: user.id } },
-    });
-    if (existing) return { kind: "already_member" };
+      await lockProject(tx, args.projectId);
+      const existing = await tx.membership.findUnique({
+        where: {
+          projectId_userId: { projectId: args.projectId, userId: user.id },
+        },
+      });
+      if (existing) return { kind: "already_member" };
 
-    const project = await tx.project.findUniqueOrThrow({
-      where: { id: args.projectId },
-      include: { plan: true },
-    });
-    const members = await tx.membership.count({
-      where: { projectId: args.projectId },
-    });
-    if (members >= project.plan.maxMembers)
+      const project = await tx.project.findUniqueOrThrow({
+        where: { id: args.projectId },
+        include: { plan: true },
+      });
+      const members = await tx.membership.count({
+        where: { projectId: args.projectId },
+      });
+      if (members >= project.plan.maxMembers)
+        return {
+          kind: "plan_limit",
+          message: `Plan limit reached: ${project.plan.name} allows ${project.plan.maxMembers} members`,
+        };
+
+      await tx.membership.create({
+        data: { projectId: args.projectId, userId: user.id, role: args.role },
+      });
+      await tx.auditLog.create({
+        data: {
+          projectId: args.projectId,
+          actorUserId: args.actorUserId,
+          action: "member.invited",
+          entityType: "membership",
+          entityId: user.id,
+          details: { email: user.email, role: args.role },
+        },
+      });
       return {
-        kind: "plan_limit",
-        message: `Plan limit reached: ${project.plan.name} allows ${project.plan.maxMembers} members`,
+        kind: "ok",
+        user: { id: user.id, email: user.email },
+        role: args.role,
       };
-
-    await tx.membership.create({
-      data: { projectId: args.projectId, userId: user.id, role: args.role },
-    });
-    await tx.auditLog.create({
-      data: {
-        projectId: args.projectId,
-        actorUserId: args.actorUserId,
-        action: "member.invited",
-        entityType: "membership",
-        entityId: user.id,
-        details: { email: user.email, role: args.role },
-      },
-    });
-    return {
-      kind: "ok",
-      user: { id: user.id, email: user.email },
-      role: args.role,
-    };
-  },
+    },
     { maxWait: 15_000, timeout: 30_000 },
   );
 }

@@ -15,7 +15,10 @@ export function signAccessToken(
   return jwt.sign(payload, secret, { expiresIn: ttlSeconds });
 }
 
-export function verifyAccessToken(token: string, secret: string): AccessPayload {
+export function verifyAccessToken(
+  token: string,
+  secret: string,
+): AccessPayload {
   const decoded = jwt.verify(token, secret) as AccessPayload;
   if (decoded.typ !== "access" || typeof decoded.sub !== "string") {
     throw new Error("invalid token type");

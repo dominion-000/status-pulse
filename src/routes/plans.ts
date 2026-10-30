@@ -93,7 +93,8 @@ export function planRoutes(prisma: PrismaClient, config: Config): Router {
             return res.status(422).json({
               error: {
                 code: "IDEMPOTENCY_CONFLICT",
-                message: "Idempotency-Key was already used with a different plan",
+                message:
+                  "Idempotency-Key was already used with a different plan",
               },
             });
           case "over_limit":

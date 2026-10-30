@@ -68,7 +68,8 @@ export function createDefaultSender(
 ): MailSender {
   const failAll = env.MAIL_FAIL_ALL === "1" || env.MAIL_FAIL_ALL === "true";
   const apiKey = (env.RESEND_API_KEY ?? "").trim();
-  const from = (env.MAIL_FROM ?? "").trim() || "Status Pulse <onboarding@resend.dev>";
+  const from =
+    (env.MAIL_FROM ?? "").trim() || "Status Pulse <onboarding@resend.dev>";
 
   return async (message: MailMessage): Promise<void> => {
     if (failAll) {

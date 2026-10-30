@@ -64,20 +64,23 @@ export async function processPlanPayment(
   const currency = (env.PAYSTACK_CURRENCY ?? "NGN").trim() || "NGN";
 
   try {
-    const res = await fetchFn("https://api.paystack.co/transaction/initialize", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${secret}`,
-        "Content-Type": "application/json",
+    const res = await fetchFn(
+      "https://api.paystack.co/transaction/initialize",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: req.email,
+          amount: req.amountCents,
+          reference: req.reference,
+          currency,
+          metadata: { planName: req.planName },
+        }),
       },
-      body: JSON.stringify({
-        email: req.email,
-        amount: req.amountCents,
-        reference: req.reference,
-        currency,
-        metadata: { planName: req.planName },
-      }),
-    });
+    );
     const body = (await res.json().catch(() => ({}))) as {
       status?: boolean;
       message?: string;

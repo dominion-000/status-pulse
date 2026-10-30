@@ -48,4 +48,3 @@ export function configIssues(c: {
     issues.push({ path: "url", message: m });
   return issues;
 }
-

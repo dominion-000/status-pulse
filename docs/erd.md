@@ -123,16 +123,16 @@ erDiagram
 
 ## Tables
 
-| Area | Tables | Week |
-|---|---|---|
-| Accounts and access | `users`, `refresh_tokens`, `projects`, `memberships` | 2 |
-| Services | `services`, `service_config_versions` | 2 |
-| Checks | `check_jobs`, `check_results` | 2 |
-| Audit and administration | `audit_log`, `scheduler_failures` | 2 |
-| Status | `service_status_history`, `status_overrides` | 3 |
-| Incidents | `incidents`, `incident_updates` | 3 |
-| Alerts | `alerts`, `outbox_messages`, `acknowledgements` | 4 |
-| Public pages and plans | `subscribers`, `subscriber_services`, `plans`, `payment_attempts` | 4 |
+| Area                     | Tables                                                            | Week |
+| ------------------------ | ----------------------------------------------------------------- | ---- |
+| Accounts and access      | `users`, `refresh_tokens`, `projects`, `memberships`              | 2    |
+| Services                 | `services`, `service_config_versions`                             | 2    |
+| Checks                   | `check_jobs`, `check_results`                                     | 2    |
+| Audit and administration | `audit_log`, `scheduler_failures`                                 | 2    |
+| Status                   | `service_status_history`, `status_overrides`                      | 3    |
+| Incidents                | `incidents`, `incident_updates`                                   | 3    |
+| Alerts                   | `alerts`, `outbox_messages`, `acknowledgements`                   | 4    |
+| Public pages and plans   | `subscribers`, `subscriber_services`, `plans`, `payment_attempts` | 4    |
 
 `services` keeps two statuses. `current_status` is the one shown, which is the override while one is active. `computed_status` is derived from results and continues underneath an override. `computed_since` marks the latest transition of the computed status: only results recorded after it count towards a streak, so each recovery step is earned with new results. `last_result_at` supports the rule that three intervals without a result give `Unknown`. `service_status_history` records every change of either status with its source (`computed` from a result, `stale` after three intervals without one, `disabled`, or `override`), and `check_results` stays untouched by status decisions.
 
@@ -142,30 +142,30 @@ erDiagram
 
 ## Threshold defaults
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `fail_threshold` | 3 | Consecutive failures before `Outage` |
-| `recovery_threshold` | 2 | Consecutive passes for each recovery step |
-| `slow_threshold` | 3 | Consecutive slow results before `Degraded` |
-| `degraded_ms` | none | Latency limit; a service without one never becomes `Degraded` |
+| Setting              | Default | Meaning                                                       |
+| -------------------- | ------- | ------------------------------------------------------------- |
+| `fail_threshold`     | 3       | Consecutive failures before `Outage`                          |
+| `recovery_threshold` | 2       | Consecutive passes for each recovery step                     |
+| `slow_threshold`     | 3       | Consecutive slow results before `Degraded`                    |
+| `degraded_ms`        | none    | Latency limit; a service without one never becomes `Degraded` |
 
 ## Constraints that enforce the guarantees
 
-| Guarantee | Constraint | Defined in |
-|---|---|---|
-| One job per service per slot | `UNIQUE (service_id, scheduled_for)` on `check_jobs` | Prisma schema |
-| One result per job | `UNIQUE (job_id)` on `check_results` | Prisma schema |
-| One active incident per service | `CREATE UNIQUE INDEX ... ON incidents (service_id) WHERE status <> 'Resolved'` | Migration SQL |
-| One active override per service | `CREATE UNIQUE INDEX ... ON status_overrides (service_id) WHERE ended_at IS NULL` | Migration SQL |
-| One alert per service, incident and state | `UNIQUE (service_id, incident_id, state)` on `alerts` | Prisma schema |
-| One acknowledgement per alert | `UNIQUE (alert_id)` on `acknowledgements` | Prisma schema |
-| One subscription per email and project | `UNIQUE (project_id, email)` on `subscribers` | Prisma schema |
-| A plan is charged once | `UNIQUE (project_id, idempotency_key)` on `payment_attempts` | Prisma schema |
-| Ordered configuration history | `UNIQUE (service_id, version)` on `service_config_versions` | Prisma schema |
-| One membership per user and project | `PRIMARY KEY (project_id, user_id)` on `memberships` | Prisma schema |
-| Valid states and roles | `CHECK` constraints on role, status, method and interval | Migration SQL |
-| Timeout shorter than interval | `CHECK (timeout_seconds < interval_seconds)` on `services` | Migration SQL |
-| Tables unreadable through the Data API | `ENABLE ROW LEVEL SECURITY` on every table, without policies | Migration SQL |
+| Guarantee                                 | Constraint                                                                        | Defined in    |
+| ----------------------------------------- | --------------------------------------------------------------------------------- | ------------- |
+| One job per service per slot              | `UNIQUE (service_id, scheduled_for)` on `check_jobs`                              | Prisma schema |
+| One result per job                        | `UNIQUE (job_id)` on `check_results`                                              | Prisma schema |
+| One active incident per service           | `CREATE UNIQUE INDEX ... ON incidents (service_id) WHERE status <> 'Resolved'`    | Migration SQL |
+| One active override per service           | `CREATE UNIQUE INDEX ... ON status_overrides (service_id) WHERE ended_at IS NULL` | Migration SQL |
+| One alert per service, incident and state | `UNIQUE (service_id, incident_id, state)` on `alerts`                             | Prisma schema |
+| One acknowledgement per alert             | `UNIQUE (alert_id)` on `acknowledgements`                                         | Prisma schema |
+| One subscription per email and project    | `UNIQUE (project_id, email)` on `subscribers`                                     | Prisma schema |
+| A plan is charged once                    | `UNIQUE (project_id, idempotency_key)` on `payment_attempts`                      | Prisma schema |
+| Ordered configuration history             | `UNIQUE (service_id, version)` on `service_config_versions`                       | Prisma schema |
+| One membership per user and project       | `PRIMARY KEY (project_id, user_id)` on `memberships`                              | Prisma schema |
+| Valid states and roles                    | `CHECK` constraints on role, status, method and interval                          | Migration SQL |
+| Timeout shorter than interval             | `CHECK (timeout_seconds < interval_seconds)` on `services`                        | Migration SQL |
+| Tables unreadable through the Data API    | `ENABLE ROW LEVEL SECURITY` on every table, without policies                      | Migration SQL |
 
 ## Queue and lock queries
 

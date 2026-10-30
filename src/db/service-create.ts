@@ -5,7 +5,10 @@ import { configIssues, type CreateServiceInput } from "../core/service-config";
 import { lockProject } from "./project-lock";
 
 export type CreateServiceOutcome =
-  | { kind: "ok"; service: Awaited<ReturnType<PrismaClient["service"]["create"]>> }
+  | {
+      kind: "ok";
+      service: Awaited<ReturnType<PrismaClient["service"]["create"]>>;
+    }
   | { kind: "invalid"; issues: { path: string; message: string }[] }
   | { kind: "plan_limit"; message: string };
 
@@ -46,54 +49,54 @@ export async function createService(
 
   return prisma.$transaction(
     async (tx): Promise<CreateServiceOutcome> => {
-    await lockProject(tx, projectId);
-    const project = await tx.project.findUniqueOrThrow({
-      where: { id: projectId },
-      include: { plan: true },
-    });
-    const count = await tx.service.count({
-      where: { projectId, deletedAt: null },
-    });
-    if (count >= project.plan.maxServices)
-      return {
-        kind: "plan_limit",
-        message: `Plan limit reached: ${project.plan.name} allows ${project.plan.maxServices} services`,
-      };
+      await lockProject(tx, projectId);
+      const project = await tx.project.findUniqueOrThrow({
+        where: { id: projectId },
+        include: { plan: true },
+      });
+      const count = await tx.service.count({
+        where: { projectId, deletedAt: null },
+      });
+      if (count >= project.plan.maxServices)
+        return {
+          kind: "plan_limit",
+          message: `Plan limit reached: ${project.plan.name} allows ${project.plan.maxServices} services`,
+        };
 
-    const service = await tx.service.create({
-      data: {
-        projectId,
-        name: input.name,
-        url: input.url,
-        method: input.method,
-        intervalSeconds: input.intervalSeconds,
-        timeoutSeconds: input.timeoutSeconds,
-        expectedStatusCodes: input.expectedStatusCodes,
-        expectedBodyText: input.expectedBodyText ?? null,
-        isPublic: input.isPublic,
-        credentialsEnc,
-        failThreshold: input.failThreshold,
-        recoveryThreshold: input.recoveryThreshold,
-        slowThreshold: input.slowThreshold,
-        degradedMs: input.degradedMs ?? null,
-        version: 1,
-      },
-    });
-    await tx.serviceConfigVersion.create({
-      data: { serviceId: service.id, version: 1, snapshot, actorUserId },
-    });
-    await tx.auditLog.create({
-      data: {
-        projectId,
-        actorUserId,
-        action: "service.created",
-        entityType: "service",
-        entityId: service.id,
-        details: { name: input.name, url: input.url },
-      },
-    });
-    return { kind: "ok", service };
-  },
+      const service = await tx.service.create({
+        data: {
+          projectId,
+          name: input.name,
+          url: input.url,
+          method: input.method,
+          intervalSeconds: input.intervalSeconds,
+          timeoutSeconds: input.timeoutSeconds,
+          expectedStatusCodes: input.expectedStatusCodes,
+          expectedBodyText: input.expectedBodyText ?? null,
+          isPublic: input.isPublic,
+          credentialsEnc,
+          failThreshold: input.failThreshold,
+          recoveryThreshold: input.recoveryThreshold,
+          slowThreshold: input.slowThreshold,
+          degradedMs: input.degradedMs ?? null,
+          version: 1,
+        },
+      });
+      await tx.serviceConfigVersion.create({
+        data: { serviceId: service.id, version: 1, snapshot, actorUserId },
+      });
+      await tx.auditLog.create({
+        data: {
+          projectId,
+          actorUserId,
+          action: "service.created",
+          entityType: "service",
+          entityId: service.id,
+          details: { name: input.name, url: input.url },
+        },
+      });
+      return { kind: "ok", service };
+    },
     { maxWait: 15_000, timeout: 30_000 },
   );
 }
