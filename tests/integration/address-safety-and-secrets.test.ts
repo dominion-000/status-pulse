@@ -47,9 +47,15 @@ describe.skipIf(!hasTestDb)("address safety and secrets (SP-EG7E)", () => {
       },
     });
 
-    const free = await p.prisma.plan.findFirstOrThrow({ where: { name: "free" } });
+    const free = await p.prisma.plan.findFirstOrThrow({
+      where: { name: "free" },
+    });
     const owner = await p.prisma.user.create({
-      data: { email: "owner-eg7e@example.com", passwordHash: "x", name: "Owner" },
+      data: {
+        email: "owner-eg7e@example.com",
+        passwordHash: "x",
+        name: "Owner",
+      },
     });
     ownerToken = signAccessToken(owner.id, SECRET, 3600);
     const project = await p.prisma.project.create({
@@ -60,7 +66,9 @@ describe.skipIf(!hasTestDb)("address safety and secrets (SP-EG7E)", () => {
       data: { projectId, userId: owner.id, role: "Owner" },
     });
     // pro plan so many create attempts do not hit the free limit
-    const pro = await p.prisma.plan.findFirstOrThrow({ where: { name: "pro" } });
+    const pro = await p.prisma.plan.findFirstOrThrow({
+      where: { name: "pro" },
+    });
     await p.prisma.project.update({
       where: { id: projectId },
       data: { planId: pro.id },
@@ -170,7 +178,9 @@ describe.skipIf(!hasTestDb)("address safety and secrets (SP-EG7E)", () => {
   it("request logs omit query strings, bodies and authorization headers", async () => {
     logs.length = 0;
     await request(app)
-      .get(`/api/v1/projects/${projectId}/services/${serviceId}?token=should-not-appear`)
+      .get(
+        `/api/v1/projects/${projectId}/services/${serviceId}?token=should-not-appear`,
+      )
       .set({
         ...auth(),
         Authorization: `Bearer ${ownerToken}`,
@@ -296,7 +306,10 @@ describe("timeout isolation (SP-N59M)", () => {
     expect(launcher).toMatch(/worker\/main/);
     expect(launcher).toMatch(/dispatcher\/main/);
     // Worker HTTP check is independently usable and does not import the scheduler loop.
-    const workerCheck = readFileSync(join(root, "worker/http-check.ts"), "utf8");
+    const workerCheck = readFileSync(
+      join(root, "worker/http-check.ts"),
+      "utf8",
+    );
     expect(workerCheck).not.toMatch(/scheduler/);
     expect(typeof runHttpCheck).toBe("function");
   });

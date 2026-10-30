@@ -43,7 +43,9 @@ describe.skipIf(!hasTestDb)("shared write paths (UI bypass closure)", () => {
     ownerId = owner.id;
     token = signAccessToken(owner.id, SECRET, 3600);
 
-    const free = await p.prisma.plan.findFirstOrThrow({ where: { name: "free" } });
+    const free = await p.prisma.plan.findFirstOrThrow({
+      where: { name: "free" },
+    });
     const project = await p.prisma.project.create({
       data: { name: "SW", slug: "sw-shared", planId: free.id },
     });

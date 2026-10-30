@@ -138,8 +138,10 @@ describe.skipIf(!hasTestDb)("dispatcher and alerts API", () => {
     const emails = new Set([first!.recipient_email, second!.recipient_email]);
     expect(emails).toEqual(new Set(["owner@example.com", "bad@fail.example"]));
 
-    const good = first!.recipient_email === "owner@example.com" ? first! : second!;
-    const failMsg = first!.recipient_email === "bad@fail.example" ? first! : second!;
+    const good =
+      first!.recipient_email === "owner@example.com" ? first! : second!;
+    const failMsg =
+      first!.recipient_email === "bad@fail.example" ? first! : second!;
 
     await markOutboxDelivered(pool, good.id, NOW);
 
@@ -177,11 +179,11 @@ describe.skipIf(!hasTestDb)("dispatcher and alerts API", () => {
       [projectId, alertId, NOW.toISOString()],
     );
     const msgId = ins.rows[0].id as string;
-      await t.client.query(
-        `UPDATE projects SET plan_id = (SELECT id FROM plans WHERE name = 'pro') WHERE id = $1`,
-        [projectId],
-      );
-let calls = 0;
+    await t.client.query(
+      `UPDATE projects SET plan_id = (SELECT id FROM plans WHERE name = 'pro') WHERE id = $1`,
+      [projectId],
+    );
+    let calls = 0;
     const failingSender = async () => {
       calls += 1;
       throw new MailSendError("forced");
@@ -195,13 +197,25 @@ let calls = 0;
 
     let now = new Date(NOW.getTime());
     for (let i = 0; i < 6; i++) {
-      const did = await dispatcherTick(t.client as PoolClient, failingSender, now, 30, 6);
+      const did = await dispatcherTick(
+        t.client as PoolClient,
+        failingSender,
+        now,
+        30,
+        6,
+      );
       expect(did).toBe(true);
       now = new Date(now.getTime() + 400_000);
     }
     expect(calls).toBe(6);
 
-    const did = await dispatcherTick(t.client as PoolClient, failingSender, now, 30, 6);
+    const did = await dispatcherTick(
+      t.client as PoolClient,
+      failingSender,
+      now,
+      30,
+      6,
+    );
     expect(did).toBe(false);
     expect(calls).toBe(6);
 
@@ -250,9 +264,7 @@ let calls = 0;
       .set("Authorization", `Bearer ${ownerToken}`);
     expect(second.status).toBe(200);
     expect(second.body.acknowledgement.actorUserId).toBe(responderId);
-    expect(second.body.acknowledgement.id).toBe(
-      first.body.acknowledgement.id,
-    );
+    expect(second.body.acknowledgement.id).toBe(first.body.acknowledgement.id);
   });
 
   it("retries undelivered messages", async () => {

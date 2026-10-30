@@ -90,7 +90,7 @@ describe.skipIf(!hasTestDb)(
         `UPDATE projects SET plan_id = (SELECT id FROM plans WHERE name = 'pro') WHERE id = $1`,
         [projectId],
       );
-}
+    }
     async function fail(serviceId: string, when?: Date) {
       minute += 1;
       when ??= at(minute);

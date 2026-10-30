@@ -65,7 +65,7 @@ describe.skipIf(!hasTestDb)("editing a service (SP-02.4, SP-02.8)", () => {
           [slug],
         )
       ).rows[0].id as string;
-projectId = await project("p");
+    projectId = await project("p");
     await t.client.query(
       `UPDATE projects SET plan_id = (SELECT id FROM plans WHERE name = 'pro') WHERE id = $1`,
       [projectId],

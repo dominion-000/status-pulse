@@ -40,7 +40,6 @@ describe.skipIf(!hasTestDb)(
         `UPDATE projects SET plan_id = (SELECT id FROM plans WHERE name = 'pro') WHERE id = $1`,
         [projectId],
       );
-
     });
     afterAll(async () => {
       await p?.close();

@@ -63,7 +63,7 @@ The API listens on `PORT` (default 3000).
 | ---------------------- | --------------------------------------------------------------------------------- |
 | `/app/login`           | Browser UI for owners and responders: projects, services, incidents, alerts, plan |
 | `/status/:slug`        | Public status page of a project, with a subscribe form                            |
-| `/api/v1/...`          | JSON API, described in `docs/openapi.yaml`                                        |
+| `/api/v1/...`          | JSON API, described in `src/doc/openapi.yaml`                                     |
 | `/api/v1/public/:slug` | JSON of the public status page                                                    |
 | `/health`              | Liveness check                                                                    |
 
@@ -154,5 +154,5 @@ The launcher starts all four processes from one command.
 | `docs/architecture.md` | Processes, status and incident rules, guarantees and their mechanism |
 | `docs/erd.md`          | Data model and constraints                                           |
 | `docs/flows.md`        | User flows for the four roles                                        |
-| `docs/openapi.yaml`    | API contract                                                         |
+| `src/doc/openapi.yaml` | API contract                                                         |
 | `docs/plan.md`         | Task and ownership plan                                              |

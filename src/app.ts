@@ -1,4 +1,3 @@
-import path from "node:path";
 import express from "express";
 import type { ErrorRequestHandler, RequestHandler } from "express";
 import type { PrismaClient } from "../prisma/generated";
@@ -15,7 +14,6 @@ import { alertRoutes } from "./routes/alerts";
 import { publicRoutes } from "./routes/public";
 import { planRoutes } from "./routes/plans";
 import { adminRoutes } from "./routes/admin";
-import { uiRoutes } from "./ui/routes";
 import { mountApiDocs } from "./docs";
 
 export interface AppDeps {
@@ -24,32 +22,14 @@ export interface AppDeps {
   prisma?: PrismaClient;
 }
 
-const notFound: RequestHandler = (req, res) => {
-  const wantsHtml = (req.headers.accept ?? "").includes("text/html");
-  if (wantsHtml) {
-    res
-      .status(404)
-      .type("html")
-      .send("<!doctype html><title>Not found</title><p>Not found</p>");
-    return;
-  }
+const notFound: RequestHandler = (_req, res) => {
   res
     .status(404)
     .json({ error: { code: "NOT_FOUND", message: "Route not found" } });
 };
 
-const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
+const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof AppError) {
-    const wantsHtml = (req.headers.accept ?? "").includes("text/html");
-    if (wantsHtml && !req.path.startsWith("/api/")) {
-      res
-        .status(err.status)
-        .type("html")
-        .send(
-          `<!doctype html><title>Error</title><p>${err.message}</p>`,
-        );
-      return;
-    }
     const body: {
       error: { code: string; message: string; details?: unknown };
     } = {
@@ -65,8 +45,36 @@ const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     .json({ error: { code: "INTERNAL", message: "Unexpected error" } });
 };
 
-/** Mount the JSON API under /api/v1. */
-function mountApi(app: express.Express, deps: Required<Pick<AppDeps, "config" | "prisma">>) {
+/** CORS for separate frontends (StatusGrep UI, etc.). */
+function corsMiddleware(origins: string[]): RequestHandler {
+  const allow = new Set(origins);
+  return (req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && allow.has(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Authorization, Content-Type, Idempotency-Key",
+      );
+      res.setHeader(
+        "Access-Control-Allow-Methods",
+        "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      );
+      res.setHeader("Vary", "Origin");
+    }
+    if (req.method === "OPTIONS") {
+      res.status(204).end();
+      return;
+    }
+    next();
+  };
+}
+
+function mountApi(
+  app: express.Express,
+  deps: Required<Pick<AppDeps, "config" | "prisma">>,
+) {
   const api = express.Router();
   api.use("/auth", authRoutes(deps.prisma, deps.config));
   api.use("/projects", projectRoutes(deps.prisma, deps.config));
@@ -86,24 +94,23 @@ function mountApi(app: express.Express, deps: Required<Pick<AppDeps, "config" | 
     "/projects/:projectId/incidents",
     incidentRoutes(deps.prisma, deps.config),
   );
-  api.use(
-    "/projects/:projectId/alerts",
-    alertRoutes(deps.prisma, deps.config),
-  );
+  api.use("/projects/:projectId/alerts", alertRoutes(deps.prisma, deps.config));
   api.use("/projects/:projectId", planRoutes(deps.prisma, deps.config));
   api.use("/public", publicRoutes(deps.prisma));
   api.use("/admin", adminRoutes(deps.prisma, deps.config));
   app.use("/api/v1", api);
 }
 
+/** JSON API only. UI lives in a separate StatusGrep app. */
 export function createApp(deps: AppDeps = {}) {
   const app = express();
   app.disable("x-powered-by");
-  // Behind Render's proxy set TRUST_PROXY_HOPS=1 so req.ip is the real client. The default trusts nothing, because
-  // trusting a proxy that is not there would let a client choose its own address.
   const hops = Number(process.env.TRUST_PROXY_HOPS ?? 0);
   if (Number.isInteger(hops) && hops > 0) app.set("trust proxy", hops);
   app.use(createRequestLogger(deps.logStream));
+  if (deps.config?.corsOrigins.length) {
+    app.use(corsMiddleware(deps.config.corsOrigins));
+  }
   app.use(express.json({ limit: "100kb" }));
   app.use(express.urlencoded({ extended: false, limit: "100kb" }));
 
@@ -111,19 +118,8 @@ export function createApp(deps: AppDeps = {}) {
     res.json({ status: "ok" });
   });
 
-  // Static UI assets (CSS).
-  app.use(
-    "/ui/assets",
-    express.static(path.join(__dirname, "ui", "public"), {
-      fallthrough: true,
-      index: false,
-    }),
-  );
-
   if (deps.config && deps.prisma) {
     mountApi(app, { config: deps.config, prisma: deps.prisma });
-    // Browser UI at /
-    app.use(uiRoutes(deps.prisma, deps.config));
   }
 
   mountApiDocs(app);

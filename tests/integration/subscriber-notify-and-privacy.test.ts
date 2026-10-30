@@ -151,9 +151,9 @@ describe.skipIf(!hasTestDb)(
       expect(notes.rows).toHaveLength(1);
       expect(notes.rows[0].recipient_email).toBe("fan@example.com");
       expect(notes.rows[0].body).toContain("investigating");
-      expect(notes.rows.map((r: { recipient_email: string }) => r.recipient_email)).not.toContain(
-        "pending@example.com",
-      );
+      expect(
+        notes.rows.map((r: { recipient_email: string }) => r.recipient_email),
+      ).not.toContain("pending@example.com");
     });
 
     it("does not notify on an internal update", async () => {
@@ -206,7 +206,10 @@ describe.skipIf(!hasTestDb)(
       );
 
       await p.prisma.$transaction(async (tx) => {
-        await openAutoIncident(tx as Parameters<typeof openAutoIncident>[0], svc);
+        await openAutoIncident(
+          tx as Parameters<typeof openAutoIncident>[0],
+          svc,
+        );
       });
 
       const after = await t.client.query(

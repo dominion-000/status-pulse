@@ -97,9 +97,7 @@ describe.skipIf(!hasTestDb)(
       });
     }
 
-    it(
-      "leaves a consistent outcome whichever of the two happens first",
-      async () => {
+    it("leaves a consistent outcome whichever of the two happens first", async () => {
       for (let round = 0; round < 15; round++) {
         const s = await newService();
         await record(s, true);
@@ -136,8 +134,6 @@ describe.skipIf(!hasTestDb)(
         expect(incidents, `round ${round}`).toBeLessThanOrEqual(1);
         expect(shownOutage, `round ${round}`).toBe(incidents);
       }
-    },
-    60_000,
-  );
+    }, 60_000);
   },
 );
