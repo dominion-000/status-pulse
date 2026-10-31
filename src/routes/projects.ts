@@ -219,5 +219,37 @@ export function projectRoutes(prisma: PrismaClient, config: Config): Router {
     },
   );
 
+  r.delete(
+    "/:projectId",
+    ...auth,
+    requireMembership(prisma, "Owner"),
+    async (req, res, next) => {
+      try {
+        const projectId = param(req, "projectId");
+        const project = await prisma.project.findUnique({
+          where: { id: projectId },
+        });
+        if (!project) return next(notFoundError());
+
+        await prisma.$transaction(async (tx) => {
+          await tx.auditLog.create({
+            data: {
+              projectId,
+              actorUserId: req.user!.id,
+              action: "project.deleted",
+              entityType: "project",
+              entityId: projectId,
+              details: { name: project.name, slug: project.slug },
+            },
+          });
+          await tx.project.delete({ where: { id: projectId } });
+        });
+        res.status(204).send();
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
   return r;
 }
