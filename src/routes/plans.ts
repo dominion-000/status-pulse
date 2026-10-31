@@ -4,13 +4,14 @@ import type { PrismaClient } from "../../prisma/generated";
 import type { Config } from "../config";
 import { conflictError, notFoundError, validationError } from "../errors";
 import { param } from "../http-params";
-import { upgradePlan } from "../db/plans";
+import { upgradePlan, finalizePlanPayment } from "../db/plans";
 import { loadUser, requireAuth } from "../middleware/auth";
 import { requireMembership } from "../middleware/permissions";
 import { validateBody } from "../middleware/validate";
 
 const upgradeSchema = z.object({
   planName: z.enum(["free", "pro"]),
+  callbackUrl: z.string().url().optional(),
 });
 
 /**
@@ -65,7 +66,9 @@ export function planRoutes(prisma: PrismaClient, config: Config): Router {
     async (req, res, next) => {
       try {
         const projectId = param(req, "projectId");
-        const { planName } = req.body as z.infer<typeof upgradeSchema>;
+        const { planName, callbackUrl } = req.body as z.infer<
+          typeof upgradeSchema
+        >;
         const idempotencyKey = req.headers["idempotency-key"];
         if (
           typeof idempotencyKey !== "string" ||
@@ -85,6 +88,7 @@ export function planRoutes(prisma: PrismaClient, config: Config): Router {
           failPayments:
             process.env.PAYMENT_FAIL_ALL === "1" ||
             process.env.PAYMENT_FAIL_ALL === "true",
+          callbackUrl,
         });
         switch (outcome.kind) {
           case "unknown_plan":
@@ -100,12 +104,60 @@ export function planRoutes(prisma: PrismaClient, config: Config): Router {
           case "over_limit":
           case "payment_failed":
             return next(conflictError(outcome.message));
+          case "pending_payment":
+            res.status(202).json({
+              status: "pending_payment",
+              authorizationUrl: outcome.authorizationUrl,
+              reference: outcome.reference,
+              payment: outcome.payment,
+            });
+            return;
           case "ok":
             res.status(outcome.replayed ? 200 : 201).json({
               plan: outcome.plan,
               payment: outcome.payment,
             });
             return;
+        }
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
+  /** After Paystack redirects back: verify reference and apply plan. */
+  r.post(
+    "/plan/complete",
+    ...auth,
+    requireMembership(prisma, "Owner", "projectId"),
+    async (req, res, next) => {
+      try {
+        const projectId = param(req, "projectId");
+        const reference =
+          typeof req.body?.reference === "string"
+            ? req.body.reference.trim()
+            : typeof req.query.reference === "string"
+              ? req.query.reference.trim()
+              : "";
+        if (!reference) {
+          return next(validationError("reference is required"));
+        }
+        const outcome = await finalizePlanPayment(prisma, {
+          projectId,
+          actorUserId: req.user!.id,
+          reference,
+        });
+        switch (outcome.kind) {
+          case "payment_failed":
+            return next(conflictError(outcome.message));
+          case "ok":
+            res.status(200).json({
+              plan: outcome.plan,
+              payment: outcome.payment,
+            });
+            return;
+          default:
+            return next(conflictError("Could not complete payment"));
         }
       } catch (err) {
         next(err);
