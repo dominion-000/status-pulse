@@ -296,9 +296,10 @@ describe("timeout isolation (SP-N59M)", () => {
   it("scheduler and worker are separate process entry points", async () => {
     const { readFileSync, existsSync } = await import("node:fs");
     const { join } = await import("node:path");
-    const root = join(process.cwd(), "src");
-    expect(existsSync(join(root, "scheduler/main.ts"))).toBe(true);
-    expect(existsSync(join(root, "worker/main.ts"))).toBe(true);
+    const root = process.cwd();
+    const srcRoot = join(root, "src");
+    expect(existsSync(join(srcRoot, "scheduler/main.ts"))).toBe(true);
+    expect(existsSync(join(srcRoot, "worker/main.ts"))).toBe(true);
     expect(existsSync(join(root, "scripts/launcher.ts"))).toBe(true);
     const launcher = readFileSync(join(root, "scripts/launcher.ts"), "utf8");
     // Launcher starts four distinct child processes (API, scheduler, worker, dispatcher).
@@ -307,7 +308,7 @@ describe("timeout isolation (SP-N59M)", () => {
     expect(launcher).toMatch(/dispatcher\/main/);
     // Worker HTTP check is independently usable and does not import the scheduler loop.
     const workerCheck = readFileSync(
-      join(root, "worker/http-check.ts"),
+      join(srcRoot, "worker/http-check.ts"),
       "utf8",
     );
     expect(workerCheck).not.toMatch(/scheduler/);
