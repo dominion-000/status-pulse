@@ -1,7 +1,6 @@
 /**
- * Outbound mail for the dispatcher.
- * Production / staging: Resend (RESEND_API_KEY required).
- * Automated tests: in-process test sender (no network). fail.example always fails there.
+ * Outbound mail via Brevo (API).
+ * Tests use an in-process sender only when NODE_ENV=test / VITEST / MAIL_PROVIDER=test.
  */
 
 export interface MailMessage {
@@ -32,62 +31,76 @@ function isTestEnv(env: NodeJS.ProcessEnv): boolean {
   );
 }
 
-async function sendWithResend(
+function parseFrom(raw: string): { email: string; name: string } {
+  const m = raw.match(/^\s*(.*)<([^>]+)>\s*$/);
+  if (m) return { name: m[1].trim() || "Status Pulse", email: m[2].trim() };
+  if (raw.includes("@")) return { name: "Status Pulse", email: raw.trim() };
+  return { name: "Status Pulse", email: raw.trim() };
+}
+
+async function sendWithBrevo(
   apiKey: string,
-  from: string,
+  fromEmail: string,
+  fromName: string,
   message: MailMessage,
 ): Promise<void> {
-  const res = await fetch("https://api.resend.com/emails", {
+  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      "api-key": apiKey,
       "Content-Type": "application/json",
+      Accept: "application/json",
     },
     body: JSON.stringify({
-      from,
-      to: [message.to],
+      sender: { email: fromEmail, name: fromName },
+      to: [{ email: message.to }],
       subject: message.subject,
-      text: message.body,
+      textContent: message.body,
     }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new MailSendError(
-      `Resend HTTP ${res.status}: ${text.slice(0, 200) || res.statusText}`,
+      `Brevo HTTP ${res.status}: ${text.slice(0, 300) || res.statusText}`,
     );
   }
 }
 
-/**
- * Builds the process mail sender.
- * - test env: local no-op success, except fail.example (and MAIL_FAIL_ALL for regression tests)
- * - otherwise: Resend only; missing key is a hard error when sending
- */
 export function createDefaultSender(
   env: NodeJS.ProcessEnv = process.env,
 ): MailSender {
   const failAll = env.MAIL_FAIL_ALL === "1" || env.MAIL_FAIL_ALL === "true";
-  const apiKey = (env.RESEND_API_KEY ?? "").trim();
-  const from =
-    (env.MAIL_FROM ?? "").trim() || "Status Pulse <onboarding@resend.dev>";
 
-  return async (message: MailMessage): Promise<void> => {
-    if (failAll) {
-      throw new MailSendError("MAIL_FAIL_ALL is set");
-    }
-    if (domainOf(message.to) === "fail.example") {
-      throw new MailSendError(`recipient domain fail.example: ${message.to}`);
-    }
+  if (isTestEnv(env)) {
+    return async (message) => {
+      if (failAll || domainOf(message.to) === "fail.example") {
+        throw new MailSendError("simulated send failure");
+      }
+    };
+  }
 
-    if (isTestEnv(env) && !apiKey) {
-      return;
-    }
-
-    if (!apiKey) {
+  const apiKey = (env.BREVO_API_KEY ?? "").trim();
+  if (!apiKey) {
+    return async () => {
       throw new MailSendError(
-        "RESEND_API_KEY is not configured; set it to send email",
+        "BREVO_API_KEY is not configured; set it to send email",
       );
-    }
-    await sendWithResend(apiKey, from, message);
+    };
+  }
+
+  const fromRaw = (env.MAIL_FROM ?? "").trim();
+  if (!fromRaw) {
+    return async () => {
+      throw new MailSendError(
+        "MAIL_FROM is not configured; use your Brevo-validated sender email",
+      );
+    };
+  }
+
+  const { email, name } = parseFrom(fromRaw);
+
+  return async (message) => {
+    if (failAll) throw new MailSendError("MAIL_FAIL_ALL is set");
+    await sendWithBrevo(apiKey, email, name, message);
   };
 }
