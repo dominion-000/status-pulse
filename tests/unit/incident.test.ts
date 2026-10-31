@@ -134,7 +134,7 @@ describe("when an incident opens (SP-05.1, SP-04.8)", () => {
         evaluation: evaluation("Outage"),
         hasActiveIncident: false,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("does not open when one is already active", () => {
@@ -185,13 +185,13 @@ describe("when an incident opens (SP-05.1, SP-04.8)", () => {
     }
   });
 
-  it("does not reopen after a responder resolves an incident while the service is still down", () => {
+  it("reopens after a responder resolves an incident while the service is still down", () => {
     expect(
       shouldOpenIncident({
         previousDisplayed: "Outage",
         evaluation: evaluation("Outage"),
         hasActiveIncident: false,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 });

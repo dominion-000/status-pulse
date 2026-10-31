@@ -36,7 +36,7 @@ const openSchema = z.object({
 // `status` is optional: leaving it out adds a note. When present it must be the next status, so a repeated or
 // racing move is answered with 409.
 const updateSchema = z.object({
-  message: z.string().trim().min(1).max(2000),
+  message: z.string().trim().max(2000).optional().default(""),
   status: z.enum(STATUSES).optional(),
   isPublic: z.boolean().default(false),
 });
@@ -269,7 +269,7 @@ export function incidentRoutes(prisma: PrismaClient, config: Config): Router {
             data: {
               incidentId: id,
               status: target,
-              message: body.message,
+              message: (body.message && body.message.trim()) || "(no message)",
               isPublic: body.isPublic,
               actorUserId: req.user!.id,
             },
@@ -329,7 +329,7 @@ export function incidentRoutes(prisma: PrismaClient, config: Config): Router {
               serviceName: m.service_name,
               projectName: m.project_name,
               incidentTitle: m.incident_title,
-              message: body.message,
+              message: (body.message && body.message.trim()) || "(no message)",
               isPublicUpdate: publicUpdate,
             });
           }

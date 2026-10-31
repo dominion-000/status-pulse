@@ -84,10 +84,9 @@ export interface OpenDecisionInput {
  * does not change. The partial unique index in the database remains the last safety point.
  */
 export function shouldOpenIncident(input: OpenDecisionInput): boolean {
-  const { previousDisplayed, evaluation, hasActiveIncident } = input;
+  const { evaluation, hasActiveIncident } = input;
   return (
     evaluation.displayed === "Outage" &&
-    previousDisplayed !== "Outage" &&
     !evaluation.overrideActive &&
     !hasActiveIncident
   );
