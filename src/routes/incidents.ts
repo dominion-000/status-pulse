@@ -133,6 +133,8 @@ export function incidentRoutes(prisma: PrismaClient, config: Config): Router {
         const rows = await prisma.incident.findMany({
           where: {
             projectId: param(req, "projectId"),
+            // Hide incidents whose service was soft-deleted (service gone from UI).
+            service: { deletedAt: null },
             ...(q.data.serviceId ? { serviceId: q.data.serviceId } : {}),
             ...(q.data.state === "active"
               ? { status: { not: "Resolved" } }
