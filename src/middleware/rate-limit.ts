@@ -3,8 +3,10 @@ import { AppError } from "../errors";
 
 /**
  * In-memory rate limiter (single process).
- * Auth (login/register) and subscribe use separate stores so rehearsing
- * one flow does not lock out the other.
+ * Auth (login/register) and subscribe use separate stores.
+ *
+ * Defaults are intentionally generous for demos and UI-driven traffic.
+ * Env: RATE_LIMIT_DISABLED=1|true|yes  AUTH_RATE_LIMIT  AUTH_RATE_WINDOW_MS
  */
 
 export interface RateLimitStore {
@@ -34,14 +36,20 @@ export class MemoryRateLimitStore implements RateLimitStore {
   }
 }
 
-/** Login + register only. */
 export const authRateLimitStore = new MemoryRateLimitStore();
-
-/** Public subscribe only. */
 export const subscribeRateLimitStore = new MemoryRateLimitStore();
-
-/** @deprecated use authRateLimitStore */
+/** @deprecated */
 export const sharedAuthRateLimitStore = authRateLimitStore;
+
+function rateLimitDisabled(): boolean {
+  const v = (process.env.RATE_LIMIT_DISABLED ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+function envInt(name: string, fallback: number): number {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
 
 export function rateLimit(options: {
   limit?: number;
@@ -49,21 +57,28 @@ export function rateLimit(options: {
   name?: string;
   store?: RateLimitStore;
 }): RequestHandler {
-  const limit = options.limit ?? 20;
-  const windowMs = options.windowMs ?? 60 * 60 * 1000;
+  // Auth: 120 / 15 min. Subscribe: 30 / hour (still abuse-resistant).
+  const defaultLimit =
+    options.name === "subscribe"
+      ? envInt("SUBSCRIBE_RATE_LIMIT", 30)
+      : envInt("AUTH_RATE_LIMIT", 120);
+  const defaultWindow =
+    options.name === "subscribe"
+      ? envInt("SUBSCRIBE_RATE_WINDOW_MS", 60 * 60 * 1000)
+      : envInt("AUTH_RATE_WINDOW_MS", 15 * 60 * 1000);
+
+  const limit = options.limit ?? defaultLimit;
+  const windowMs = options.windowMs ?? defaultWindow;
   const name = options.name ?? "auth";
   const store = options.store ?? authRateLimitStore;
 
   return (req, _res, next) => {
-    if (process.env.RATE_LIMIT_DISABLED === "1") {
+    if (rateLimitDisabled()) {
       next();
       return;
     }
 
-    // Never the X-Forwarded-For header: the client writes it, so keying on it lets anyone dodge the limit.
-    // Behind a proxy set TRUST_PROXY_HOPS (see app.ts) and req.ip is the real client.
     const ip = req.ip || req.socket.remoteAddress || "unknown";
-
     const key = `${name}:${ip}`;
     const count = store.hit(key, windowMs);
     if (count > limit) {
