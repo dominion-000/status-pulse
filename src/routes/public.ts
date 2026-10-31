@@ -11,10 +11,7 @@ import { notFoundError, validationError } from "../errors";
 import { param } from "../http-params";
 import { rateLimit, subscribeRateLimitStore } from "../middleware/rate-limit";
 import { validateBody } from "../middleware/validate";
-import {
-  subscribeToPublicProject,
-  verifySubscription,
-} from "../db/subscribe";
+import { subscribeToPublicProject, verifySubscription } from "../db/subscribe";
 import { cacheGet, cacheSet, publicStatusKey } from "../core/cache";
 
 const HISTORY_LIMIT = 20;
@@ -152,7 +149,9 @@ export function publicRoutes(prisma: PrismaClient): Router {
     async (req, res, next) => {
       try {
         const slug = param(req, "projectSlug");
-        const { email, serviceIds } = req.body as z.infer<typeof subscribeSchema>;
+        const { email, serviceIds } = req.body as z.infer<
+          typeof subscribeSchema
+        >;
 
         const result = await subscribeToPublicProject(prisma, {
           projectSlug: slug,
@@ -161,15 +160,19 @@ export function publicRoutes(prisma: PrismaClient): Router {
         });
 
         if (!result.ok) {
-          if (result.reason === "project_not_found") return next(notFoundError());
+          if (result.reason === "project_not_found")
+            return next(notFoundError());
           if (result.reason === "no_public_services") {
             return next(
-              validationError("at least one public enabled service is required", [
-                {
-                  path: "serviceIds",
-                  message: "at least one public enabled service is required",
-                },
-              ]),
+              validationError(
+                "at least one public enabled service is required",
+                [
+                  {
+                    path: "serviceIds",
+                    message: "at least one public enabled service is required",
+                  },
+                ],
+              ),
             );
           }
           return next(

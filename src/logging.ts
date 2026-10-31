@@ -20,8 +20,7 @@ morgan.token("request-id", (req) => {
   return (req as { requestId?: string }).requestId ?? "-";
 });
 
-const FORMAT =
-  ':method :safe-url :status :response-time ms rid=:request-id';
+const FORMAT = ":method :safe-url :status :response-time ms rid=:request-id";
 
 export function createRequestLogger(stream?: {
   write(line: string): void;

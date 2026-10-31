@@ -7,9 +7,15 @@ import winston from "winston";
 const level = (process.env.LOG_LEVEL ?? "info").toLowerCase();
 
 export const log = winston.createLogger({
-  level: ["error", "warn", "info", "http", "verbose", "debug", "silly"].includes(
-    level,
-  )
+  level: [
+    "error",
+    "warn",
+    "info",
+    "http",
+    "verbose",
+    "debug",
+    "silly",
+  ].includes(level)
     ? level
     : "info",
   format: winston.format.combine(
