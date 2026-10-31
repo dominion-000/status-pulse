@@ -326,6 +326,41 @@ export function serviceRoutes(prisma: PrismaClient, config: Config): Router {
     },
   );
 
+  r.delete(
+    "/:serviceId",
+    ...auth,
+    requireMembership(prisma, "Owner", "projectId"),
+    async (req, res, next) => {
+      try {
+        const projectId = param(req, "projectId");
+        const serviceId = param(req, "serviceId");
+        const service = await prisma.service.findFirst({
+          where: { id: serviceId, projectId, deletedAt: null },
+        });
+        if (!service) return next(notFoundError());
+
+        await prisma.$transaction(async (tx) => {
+          await tx.service.update({
+            where: { id: serviceId },
+            data: { deletedAt: new Date(), enabled: false },
+          });
+          await tx.auditLog.create({
+            data: {
+              projectId,
+              actorUserId: req.user!.id,
+              action: "service.deleted",
+              entityType: "service",
+              entityId: serviceId,
+            },
+          });
+        });
+        res.status(204).send();
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
   r.post(
     "/:serviceId/disable",
     ...auth,
