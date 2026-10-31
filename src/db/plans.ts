@@ -112,7 +112,7 @@ export async function upgradePlan(
         amountCents: target.priceCents,
         reference: `${args.projectId.slice(0, 8)}-${args.key}`.slice(0, 100),
         planName: target.name,
-        callbackUrl: args.callbackUrl,
+        ...(args.callbackUrl ? { callbackUrl: args.callbackUrl } : {}),
       },
       { failPayments: args.failPayments },
     );

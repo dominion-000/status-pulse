@@ -88,7 +88,7 @@ export function planRoutes(prisma: PrismaClient, config: Config): Router {
           failPayments:
             process.env.PAYMENT_FAIL_ALL === "1" ||
             process.env.PAYMENT_FAIL_ALL === "true",
-          callbackUrl,
+          ...(callbackUrl ? { callbackUrl } : {}),
         });
         switch (outcome.kind) {
           case "unknown_plan":

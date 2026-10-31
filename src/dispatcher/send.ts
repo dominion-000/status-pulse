@@ -33,7 +33,12 @@ function isTestEnv(env: NodeJS.ProcessEnv): boolean {
 
 function parseFrom(raw: string): { email: string; name: string } {
   const m = raw.match(/^\s*(.*)<([^>]+)>\s*$/);
-  if (m) return { name: m[1].trim() || "Status Pulse", email: m[2].trim() };
+  if (m && m[1] !== undefined && m[2] !== undefined) {
+    return {
+      name: m[1].trim() || "Status Pulse",
+      email: m[2].trim(),
+    };
+  }
   if (raw.includes("@")) return { name: "Status Pulse", email: raw.trim() };
   return { name: "Status Pulse", email: raw.trim() };
 }
