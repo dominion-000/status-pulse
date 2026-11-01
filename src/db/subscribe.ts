@@ -115,16 +115,19 @@ export async function subscribeToPublicProject(
         kind: "subscription_verification",
         recipientEmail: email,
         subject: `Confirm your subscription — ${project.name}`,
-        body: `Hello,
-
-Please confirm your subscription to status updates for “${project.name}”.
-
-${verifyUrl}
-
-If you did not request this, you can ignore this message.
-
-— StatusGrep` +
-          `Use this verification token: ${raw}`,
+        body: [
+          "Hello,",
+          "",
+          `Please confirm your subscription to status updates for "${project.name}".`,
+          "",
+          `Verification token: ${raw}`,
+          "",
+          "Use this token on the public status page to complete verification.",
+          "",
+          "If you did not request this, you can ignore this message.",
+          "",
+          "— StatusGrep",
+        ].join("\n"),
       },
     });
 
