@@ -35,7 +35,7 @@ describe("createDefaultSender", () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     const original = globalThis.fetch;
     globalThis.fetch = (async (url, init) => {
-      calls.push({ url: String(url), init });
+      calls.push({ url: String(url), ...(init !== undefined ? { init } : {}) });
       return { ok: true, status: 201, text: async () => "" } as Response;
     }) as typeof fetch;
     try {
