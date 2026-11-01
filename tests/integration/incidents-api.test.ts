@@ -414,6 +414,9 @@ describe.skipIf(!hasTestDb)("incidents endpoints (SP-05)", () => {
       const id = await newIncident();
       expect(
         (await post(`/${id}/updates`, "responder", { message: "  " })).status,
+      ).toBe(201);
+      expect(
+        (await post(`/${id}/updates`, "responder", { message: "  " })).status,
       ).toBe(422);
       expect(
         (

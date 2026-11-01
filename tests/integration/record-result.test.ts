@@ -245,7 +245,7 @@ describe.skipIf(!hasTestDb)(
         expect((await incidents(privateService))[0].is_public).toBe(false);
       });
 
-      it("does not reopen after a responder resolves it while the service is still down", async () => {
+      it("reopens after a responder resolves it while the service is still down", async () => {
         const s = await newService();
         await record(s, "p");
         for (let i = 0; i < 3; i++) await record(s, "f");
@@ -253,8 +253,8 @@ describe.skipIf(!hasTestDb)(
           `UPDATE incidents SET status = 'Resolved', resolved_at = now(), resolved_by_user_id = $2 WHERE service_id = $1`,
           [s, userId],
         );
-        expect((await record(s, "f")).incidentId).toBeNull();
-        expect(await incidents(s)).toHaveLength(1);
+        expect((await record(s, "f")).incidentId).not.toBeNull();
+        expect(await incidents(s)).toHaveLength(2);
       });
 
       it("opens a new incident for a later outage once the earlier one is resolved", async () => {
