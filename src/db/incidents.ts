@@ -46,7 +46,7 @@ export async function openAutoIncident(
         serviceName: m.service_name,
         projectName: m.project_name,
         incidentTitle: `${m.service_name}: outage detected`,
-        message: `${m.service_name} in ${m.project_name} has entered Outage. An incident was opened automatically.`,
+        message: `Service “${m.service_name}” in project “${m.project_name}” is reporting an outage. An incident was opened automatically. Sign in to review checks and post updates.`,
         isPublicUpdate: true,
       });
     }
@@ -69,9 +69,11 @@ export async function createAlertForIncident(
     ), recipients AS (
       INSERT INTO outbox_messages (project_id, kind, alert_id, recipient_email, subject, body)
       SELECT a.project_id, 'alert', a.id, u.email,
-             '[' || p.name || '] ' || s.name || ' is down',
-             s.name || ' in project ' || p.name || ' has entered Outage and an incident has been opened. ' ||
-             'Open the dashboard to acknowledge this alert.'
+             '[' || p.name || '] Outage: ' || s.name,
+             'Hello,' || E'\n\n' ||
+             'Service "' || s.name || '" in project "' || p.name || '" is in Outage.' || E'\n' ||
+             'An incident was opened automatically. Please sign in to acknowledge this alert and coordinate recovery.' || E'\n\n' ||
+             '— StatusGrep'
         FROM new_alert a
         JOIN projects p ON p.id = a.project_id
         JOIN services s ON s.id = a.service_id
