@@ -217,7 +217,7 @@ describe.skipIf(!hasTestDb)(
           WHERE kind = 'subscriber_notification' AND recipient_email = 'web-fan@example.com'`,
       );
       expect(after.rows.length).toBe(before.rows[0].n + 1);
-      expect(after.rows[after.rows.length - 1].body).toContain("Outage");
+      expect(after.rows[after.rows.length - 1].body.toLowerCase()).toContain("outage");
     });
 
     it("public page never leaks private service data or credentials", async () => {

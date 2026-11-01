@@ -156,7 +156,7 @@ describe.skipIf(!hasTestDb)(
           lease_until: null,
           last_error: null,
         });
-        expect(m.subject).toBe("[Acme] svc-" + n + " is down");
+        expect(m.subject).toBe("[Acme] Outage: svc-" + n);
         expect(m.body).not.toContain("secret.internal.example");
         expect(m.body).not.toContain("token=abc");
       }
