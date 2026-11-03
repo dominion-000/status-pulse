@@ -133,7 +133,7 @@ export async function upgradePlan(
       };
     }
 
-    // Real Paystack: customer must complete checkout; plan changes only after verify.
+    // Paystack: customer must complete checkout; plan changes only after verify.
     if (pay.pendingCheckout && pay.authorizationUrl) {
       const pending = await prisma.paymentAttempt.create({
         data: {
@@ -230,7 +230,6 @@ export async function upgradePlan(
     throw err;
   }
 }
-
 
 /**
  * After Paystack checkout, verify the charge and apply the plan upgrade.
@@ -329,7 +328,10 @@ async function finalizeWithAttempt(
       { maxWait: 15_000, timeout: 30_000 },
     );
     if (!result) {
-      return { kind: "payment_failed", message: "Could not apply plan upgrade" };
+      return {
+        kind: "payment_failed",
+        message: "Could not apply plan upgrade",
+      };
     }
     return {
       kind: "ok",

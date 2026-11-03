@@ -37,7 +37,7 @@ export function requireAuth(config: Config): RequestHandler {
   };
 }
 
-/** Load the user's email after verifying the token (for audit / responses). */
+/** Load the user's email after verifying the token. */
 export function loadUser(prisma: PrismaClient): RequestHandler {
   return async (req, _res, next) => {
     if (!req.user) return next(unauthorizedError());

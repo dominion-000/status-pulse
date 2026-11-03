@@ -5,7 +5,6 @@ import { AppError } from "../errors";
  * In-memory rate limiter (single process).
  * Auth (login/register) and subscribe use separate stores.
  *
- * Defaults are intentionally generous for demos and UI-driven traffic.
  * Env: RATE_LIMIT_DISABLED=1|true|yes  AUTH_RATE_LIMIT  AUTH_RATE_WINDOW_MS
  */
 
@@ -57,7 +56,7 @@ export function rateLimit(options: {
   name?: string;
   store?: RateLimitStore;
 }): RequestHandler {
-  // Auth: 120 / 15 min. Subscribe: 30 / hour (still abuse-resistant).
+  // Auth: 120 / 15 min. Subscribe: 30 / hour.
   const defaultLimit =
     options.name === "subscribe"
       ? envInt("SUBSCRIBE_RATE_LIMIT", 30)
