@@ -10,10 +10,10 @@ Four processes share one PostgreSQL database.
 
 | Process    | Entry                    | Responsibility                                                                                            |
 | ---------- | ------------------------ | --------------------------------------------------------------------------------------------------------- |
-| API        | `src/main.ts`            | JSON API under `/api/v1`, browser UI, public status page                                                  |
+| API        | `src/main.ts`            | JSON API under `/api/v1`, OpenAPI UI, public status JSON                                                  |
 | Scheduler  | `src/scheduler/main.ts`  | Enqueues one check job per service per interval, ends expired overrides, marks stale services Unknown     |
 | Worker     | `src/worker/main.ts`     | Claims a job, runs the check, records the result, recalculates the status and opens an incident on outage |
-| Dispatcher | `src/dispatcher/main.ts` | Claims outbox messages, sends them (simulated), retries failures with backoff                             |
+| Dispatcher | `src/dispatcher/main.ts` | Claims outbox messages, sends email (Brevo), retries failures with backoff                                |
 
 Design rules, with the reasoning, are in `docs/architecture.md`. The data model is in `docs/erd.md`.
 
@@ -36,9 +36,7 @@ pnpm build
 pnpm seed
 ```
 
-Migrations are hand-written SQL in `prisma/migrations`, because partial unique indexes cannot be expressed in `schema.prisma`. Apply them with `pnpm prisma:migrate` (`prisma migrate deploy`) only. `prisma migrate dev` must not be run against a database that holds data: it may try to drop those indexes.
-
-`pnpm seed` creates the account `demo@statuspulse.local` (password `correct horse battery`), a project with the slug `demo` and one public service.
+Migrations are hand-written SQL in `prisma/migrations`, because partial unique indexes cannot be expressed in `schema.prisma`. Apply with `pnpm prisma:migrate` (`prisma migrate deploy`) only. `prisma migrate dev` must not be run against a database that holds data: it may try to drop those indexes.
 
 ## Run
 
@@ -59,13 +57,12 @@ pnpm start:dispatcher
 
 The API listens on `PORT` (default 3000).
 
-| Address                | Content                                                                           |
-| ---------------------- | --------------------------------------------------------------------------------- |
-| `/app/login`           | Browser UI for owners and responders: projects, services, incidents, alerts, plan |
-| `/status/:slug`        | Public status page of a project, with a subscribe form                            |
-| `/api/v1/...`          | JSON API, described in `src/doc/openapi.yaml`                                     |
-| `/api/v1/public/:slug` | JSON of the public status page                                                    |
-| `/health`              | Liveness check                                                                    |
+| Address                | Content                                       |
+| ---------------------- | --------------------------------------------- |
+| `/api/v1/...`          | JSON API, described in `src/doc/openapi.yaml` |
+| `/api/docs`            | Swagger UI for the OpenAPI document           |
+| `/api/v1/public/:slug` | JSON of the public status page                |
+| `/health`              | Liveness check                                |
 
 ## Roles
 
@@ -81,25 +78,27 @@ Roles are ordered Owner, Responder, Viewer. A caller who is not a member of a pr
 
 Values are read from the environment, and from `.env` through `dotenv`.
 
-| Variable                   | Default  | Purpose                                                                                                    |
-| -------------------------- | -------- | ---------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`             | required | PostgreSQL connection string                                                                               |
-| `CREDENTIALS_ENC_KEY`      | required | 32 bytes, base64. Encrypts endpoint credentials with AES-256-GCM                                           |
-| `JWT_SECRET`               | required | Signs access tokens. At least 32 characters                                                                |
-| `PORT`                     | 3000     | API port                                                                                                   |
-| `ACCESS_TOKEN_TTL_SECONDS` | 28800    | Access token lifetime in seconds (8 hours). The browser session cookie uses the same value                 |
-| `REFRESH_TOKEN_TTL_DAYS`   | 30       | Refresh token lifetime                                                                                     |
-| `WORKER_LEASE_SECONDS`     | 60       | How long a claimed check job is reserved                                                                   |
-| `WORKER_MAX_ATTEMPTS`      | 5        | Claim attempts before a job is abandoned                                                                   |
-| `DISPATCHER_LEASE_SECONDS` | 30       | How long a claimed outbox message is reserved                                                              |
-| `DISPATCHER_MAX_ATTEMPTS`  | 6        | Automatic send attempts before a message waits for a manual retry                                          |
-| `TRUST_PROXY_HOPS`         | 0        | Number of proxies in front of the API. Set to `1` behind Render: the rate limit keys on the client address |
-| `RESEND_API_KEY`           | required | Resend API key for dispatcher email (not required only under automated tests)                              |
-| `MAIL_FROM`                | see note | From address registered with Resend                                                                        |
-| `PAYSTACK_SECRET_KEY`      | required | Paystack secret. Plan upgrades fail closed without it outside tests                                        |
-| `PAYSTACK_CURRENCY`        | NGN      | Currency for Paystack initialize                                                                           |
-| `RATE_LIMIT_DISABLED`      | unset    | Ops escape hatch only: `1` turns off rate limits and logs a warning at start                               |
-| `DATABASE_URL_TEST`        | none     | A separate database for the tests (see Tests)                                                              |
+| Variable                   | Default   | Purpose                                                                                                    |
+| -------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`             | required  | PostgreSQL connection string                                                                               |
+| `CREDENTIALS_ENC_KEY`      | required  | 32 bytes, base64. Encrypts endpoint credentials with AES-256-GCM                                           |
+| `JWT_SECRET`               | required  | Signs access tokens. At least 32 characters                                                                |
+| `PORT`                     | 3000      | API port                                                                                                   |
+| `ACCESS_TOKEN_TTL_SECONDS` | 28800     | Access token lifetime in seconds (8 hours). The browser session cookie uses the same value                 |
+| `REFRESH_TOKEN_TTL_DAYS`   | 30        | Refresh token lifetime                                                                                     |
+| `WORKER_LEASE_SECONDS`     | 60        | How long a claimed check job is reserved                                                                   |
+| `WORKER_MAX_ATTEMPTS`      | 5         | Claim attempts before a job is abandoned                                                                   |
+| `DISPATCHER_LEASE_SECONDS` | 30        | How long a claimed outbox message is reserved                                                              |
+| `DISPATCHER_MAX_ATTEMPTS`  | 6         | Automatic send attempts before a message waits for a manual retry                                          |
+| `TRUST_PROXY_HOPS`         | 0         | Number of proxies in front of the API. Set to `1` behind Render: the rate limit keys on the client address |
+| `BREVO_API_KEY`            | required* | Brevo API key for dispatcher email (*or test env in-process sender)                                        |
+| `MAIL_FROM`                | required* | Verified sender, e.g. `StatusGrep <you@domain>`                                                            |
+| `PAYSTACK_SECRET_KEY`      | required* | Paystack secret for real checkout (*tests may use `PAYMENT_PROVIDER=test`)                                 |
+| `PAYSTACK_CURRENCY`        | NGN       | ISO currency for initialize (set `USD` for dollar amounts with the same `price_cents`)                     |
+| `CORS_ORIGIN`              |           | Comma-separated UI origins allowed to call the API                                                         |
+| `REDIS_URL`                |           | Optional Redis for public status cache                                                                     |
+| `RATE_LIMIT_DISABLED`      | unset     | Ops escape hatch only: `1` turns off rate limits and logs a warning at start                               |
+| `DATABASE_URL_TEST`        | none      | A separate database for the tests (see Tests)                                                              |
 
 Rate limiting applies to register, login and subscribe. Each limit is 20 requests per hour per client address (`req.ip`, never client-written `X-Forwarded-For`).
 
@@ -116,8 +115,8 @@ Switching to a plan whose limits are below what the project already has is refus
 
 ## Email and payments
 
-- **Email:** the dispatcher sends through [Resend](https://resend.com). Set `RESEND_API_KEY` and a verified `MAIL_FROM`. Without a key, sends fail (except in automated tests, which use an in-process sender).
-- **Payments:** plan upgrades call Paystack `transaction/initialize` with `PAYSTACK_SECRET_KEY`. Without a key outside tests, the upgrade is refused and recorded as a failed payment attempt.
+- **Email:** the dispatcher sends via **Brevo** (`BREVO_API_KEY` + verified `MAIL_FROM`). Automated tests use an in-process sender only.
+- **Payments:** plan upgrades call Paystack **initialize**, redirect the user to checkout, then **verify** before changing the plan. Set `PAYSTACK_SECRET_KEY` and `PAYSTACK_CURRENCY`. Amount is `plans.price_cents` in minor units.
 - Delivery failures still use outbox backoff (5 s, 10 s, … up to 5 minutes) and stop after `DISPATCHER_MAX_ATTEMPTS` until a manual alert retry.
 
 ## Tests
@@ -142,7 +141,7 @@ The launcher starts all four processes from one command.
 
 - The build needs the development dependencies: `typescript` compiles the code and `prisma` generates the client and applies migrations.
 - `prisma:generate` needs `DATABASE_URL` to be set during the build; the value is not used to connect.
-- Migrations are applied with `pnpm prisma:migrate` against the production database, once before the first start and again after each new migration.
+- Migrations are applied with `pnpm prisma:migrate` against the production database(`DATABASE_URL` is required), once before the first start and again after each new migration.
 - `TRUST_PROXY_HOPS=1` is required behind Render's proxy. Without it every visitor appears to come from the proxy's address, so all visitors share one rate-limit counter.
 - A hosted PostgreSQL such as Supabase is used for `DATABASE_URL`.
 
