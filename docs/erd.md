@@ -138,7 +138,7 @@ erDiagram
 
 `incidents.is_public` is the incident's own flag, set from its service when the incident opens and cleared by the owner when the incident is hidden. Whether an incident or an update is public is derived from this flag together with the service's `is_public`; it is not stored. `incident_updates.is_public` is the author's choice for one update.
 
-`outbox_messages` holds every simulated email: alerts, subscription verification and subscriber notifications. `check_results` stores `passed` and `latency_ms`; whether a result is slow is derived from the latency and the service's latency limit when the result is evaluated.
+`outbox_messages` holds outbound email: alerts, subscription verification and subscriber notifications. `check_results` stores `passed` and `latency_ms`; whether a result is slow is derived from the latency and the service's latency limit when the result is evaluated.
 
 ## Threshold defaults
 

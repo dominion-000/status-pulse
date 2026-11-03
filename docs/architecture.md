@@ -14,7 +14,7 @@ flowchart LR
   SCH["Scheduler<br/>creates jobs, sweeps stale state"]
   WRK["Worker(s)<br/>claim a job, run the check, save the outcome"]
   DSP["Dispatcher<br/>sends alerts, retries failures"]
-  DB[("PostgreSQL on Supabase")]
+  DB[("PostgreSQL")]
   EXT["Monitored endpoints"]
   API <--> DB
   SCH --> DB

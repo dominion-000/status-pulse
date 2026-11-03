@@ -1,6 +1,6 @@
 # Status Pulse: Task & Ownership Plan
 
-> **Requirement: Task/ownership plan.** Status Pulse is a solo project, and every task is owned by the project's developer. Ownership is evidenced by the commit history, the decision log in this document and the automated tests. Presentation 1 covers Weeks 1 and 2.
+> **Requirement: Task/ownership plan.** Status Pulse is a solo project, and every task is owned by the project's developer. Ownership is evidenced by the commit history, the decision log in this document and the automated tests.
 
 ## Milestones
 
@@ -37,24 +37,24 @@ Prioritisation: steps 10, 11 and 12 and all automated tests are required for Wee
 
 ## Decision log
 
-| Decision                                                                                                    | Alternatives considered                    | Reason                                                                       |
-| ----------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------- |
-| The database enforces every "exactly once" rule                                                             | Application-level checks                   | Application checks can race; database constraints cannot                     |
-| PostgreSQL as the job queue                                                                                 | Redis, RabbitMQ                            | One fewer service to run, and constraints provide the guarantees             |
-| Epoch-aligned `scheduled_for`                                                                               | `now()` timestamps                         | Several schedulers compute the same slot, so duplicates collide on one row   |
-| Four processes in one codebase                                                                              | One process with timers; multiple packages | Real multi-worker behaviour with a single `package.json`                     |
-| Alert dispatcher as a separate process                                                                      | Sending alerts inside the worker           | A failing mail provider cannot delay checks                                  |
-| Status calculated on write through one `evaluate` function                                                  | Calculated on every read                   | A change of status is an event, and the public page stays a cheap read       |
-| Per-service row lock around every status change                                                             | Optimistic version check                   | Simpler to implement and to reason about                                     |
-| Stale jobs are skipped, not caught up                                                                       | Run every missed check                     | Catching up would record many identical results with false timestamps        |
-| A streak restarts when a service enters Unknown                                                             | Streak continues across a gap              | Results from before a gap say nothing about the present                      |
-| An override suppresses new incidents and alerts                                                             | Override changes only the displayed status | The owner has declared the status, and checks are still recorded             |
-| Incident visibility follows its service; the owner may hide an incident                                     | Free choice per incident                   | An incident on a private service must never be public                        |
-| Role read from the database on every request                                                                | Role stored in the token                   | A removed member loses access immediately                                    |
-| bcrypt at cost 12, passwords limited to 72 bytes                                                            | scrypt, Argon2id                           | OWASP lists bcrypt as the choice after Argon2id, and it is widely understood |
-| Prisma for the model and ordinary queries; raw SQL for row locks, the claim query and the one-incident rule | Raw SQL only                               | Prisma cannot express row locks or partial unique indexes                    |
-| TypeScript 6 compiled with `tsc`; Vitest                                                                    | TypeScript 7; esbuild-based runners        | esbuild 0.27 and later require macOS 12, and development is on macOS 11      |
-| Render for the shared test environment                                                                      | Other hosts                                | Deploys directly from the repository                                         |
+| Decision                                                                                                    | Alternatives considered                    | Reason                                                                                                                            |
+| ----------------------------------------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| The database enforces every "exactly once" rule                                                             | Application-level checks                   | Application checks can race; database constraints cannot                                                                          |
+| PostgreSQL as the job queue                                                                                 | Redis, RabbitMQ                            | One fewer service to run, and constraints provide the guarantees                                                                  |
+| Epoch-aligned `scheduled_for`                                                                               | `now()` timestamps                         | Several schedulers compute the same slot, so duplicates collide on one row                                                        |
+| Four processes in one codebase                                                                              | One process with timers; multiple packages | Real multi-worker behaviour with a single `package.json`                                                                          |
+| Alert dispatcher as a separate process                                                                      | Sending alerts inside the worker           | A failing mail provider cannot delay checks                                                                                       |
+| Status calculated on write through one `evaluate` function                                                  | Calculated on every read                   | A change of status is an event, and the public page stays a cheap read                                                            |
+| Per-service row lock around every status change                                                             | Optimistic version check                   | Simpler to implement and to reason about                                                                                          |
+| Stale jobs are skipped, not caught up                                                                       | Run every missed check                     | Catching up would record many identical results with false timestamps                                                             |
+| A streak restarts when a service enters Unknown                                                             | Streak continues across a gap              | Results from before a gap say nothing about the present                                                                           |
+| An override suppresses new incidents and alerts                                                             | Override changes only the displayed status | The owner has declared the status, and checks are still recorded                                                                  |
+| Incident visibility follows its service; the owner may hide an incident                                     | Free choice per incident                   | An incident on a private service must never be public                                                                             |
+| Role read from the database on every request                                                                | Role stored in the token                   | A removed member loses access immediately                                                                                         |
+| bcrypt at cost 12, passwords limited to 72 bytes                                                            | scrypt, Argon2id                           | OWASP lists bcrypt as the choice after Argon2id, and it is widely understood                                                      |
+| Prisma for the model and ordinary queries; raw SQL for row locks, the claim query and the one-incident rule | Raw SQL only                               | Prisma cannot express row locks or partial unique indexes. But it's good for database client code generation, easy migration, etc |
+| TypeScript 6 compiled with `tsc`; Vitest                                                                    | TypeScript 7; esbuild-based runners        | esbuild 0.27 and later require macOS 12, and development is on macOS 11                                                           |
+| Render for the shared test environment                                                                      | Other hosts                                | Deploys directly from the repository                                                                                              |
 
 ## Risk register
 
@@ -67,11 +67,7 @@ Prioritisation: steps 10, 11 and 12 and all automated tests are required for Wee
 | 5   | Raw SQL bypasses Prisma's type checking                         | Med        | Med    | Raw queries kept in one module, each covered by a test                                                                  |
 | 6   | Server-side request forgery or credential leak                  | Low        | High   | Address checks at save and at connect time, encrypted credentials, explicit response shapes, logs without query strings |
 | 7   | Supabase Data API exposes tables                                | Med        | High   | Row level security on every table, verified by a test                                                                   |
-| 8   | Free-tier limits: Supabase connections, Render idle sleep       | Med        | Med    | Small connection pools; service woken before any demonstration                                                          |
-| 9   | Tooling unsupported on macOS 11                                 | Med        | Med    | No esbuild-based tools; only tools verified on the development machine                                                  |
+| 8   | Free-tier limits: Supabase connections, Render idle sleep       | Med        | Med    | Small connection pools; service woken before any usage or run cronjobs                                                  |
+| 9   | Tooling unsupported on macOS 11(My machine)                     | Med        | Med    | No esbuild-based tools; only tools verified on the development machine                                                  |
 | 10  | Time-dependent tests are flaky                                  | Med        | Med    | Injected clock; no direct `Date.now()` in logic                                                                         |
 | 11  | Scope creep into out-of-scope items                             | Low        | Med    | Non-goals listed in the README                                                                                          |
-
-## Commit conventions
-
-Conventional commits with a scope, one logical change per commit, and no unrelated changes bundled together. Each commit builds and its tests pass. Documents are committed one at a time.

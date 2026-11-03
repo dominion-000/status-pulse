@@ -1,10 +1,12 @@
+> **Handover note (production):** Mail and payment are implemented against real providers (outbox → Brevo; Paystack checkout + verify). Criteria that say “simulated” describe the original brief; the deployed system is not a mock for those paths outside automated tests.
+
 # Status Pulse: Stories, Acceptance Criteria and Traceability
 
 > **Requirement: Stories + criteria.** Each SP section has a story and numbered, testable criteria. The traceability table at the end maps requirements to the acceptance scenarios and to the tests that verify them.
 
 ## Roles
 
-`Owner` (developer or project owner), `Responder` and `Viewer` are project roles. `Public` is an unauthenticated visitor or subscriber. `Admin` is a platform role.
+`Owner` (Developer or project owner), `Responder` and `Viewer` are project roles. `Public` is an unauthenticated visitor or subscriber. `Admin` is a platform role.
 
 ## Delivery schedule
 
@@ -154,6 +156,6 @@
 | Time              | Thresholds, staleness and override expiry are tested with an injected clock                                |
 | Secrets in logs   | Request logs omit query strings, request bodies and authorization headers                                  |
 
-## Non-goals (v1.0)
+## Non-goals
 
-Full application performance monitoring, log aggregation, infrastructure agents, SMS and telephone paging, real payment processing, multi-region runners, automatic remediation, custom domains and DNS management.
+Full application performance monitoring, log aggregation, infrastructure agents, SMS and telephone paging, multi-region runners, automatic remediation, custom domains and DNS management.
