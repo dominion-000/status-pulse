@@ -2,14 +2,23 @@ import { Router } from "express";
 import { z } from "zod";
 import type { PrismaClient } from "../../prisma/generated";
 import type { Config } from "../config";
-import { verifyPassword } from "../core/password";
+import {
+  hashPassword,
+  passwordIssues,
+  verifyPassword,
+} from "../core/password";
 import { registerUser } from "../db/register-user";
 import {
   generateRefreshToken,
   hashRefreshToken,
   signAccessToken,
 } from "../auth/tokens";
-import { conflictError, unauthorizedError, validationError } from "../errors";
+import {
+  conflictError,
+  unauthorizedError,
+  validationError,
+} from "../errors";
+import { requireAuth, loadUser } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import { rateLimit, authRateLimitStore } from "../middleware/rate-limit";
 
@@ -181,6 +190,107 @@ export function authRoutes(prisma: PrismaClient, config: Config): Router {
       ]);
 
       res.json(tokenPair(stored.userId, config, raw));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+
+  const meAuth = [requireAuth(config), loadUser(prisma)] as const;
+
+  r.get("/me", ...meAuth, async (req, res, next) => {
+    try {
+      const user = await prisma.user.findUniqueOrThrow({
+        where: { id: req.user!.id },
+      });
+      res.json({
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          isAdmin: user.isAdmin,
+          createdAt: user.createdAt.toISOString(),
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  const patchMeSchema = z
+    .object({
+      name: z.string().trim().min(1).max(120).nullable().optional(),
+      email: z.string().email().max(320).optional(),
+      currentPassword: z.string().min(1).optional(),
+      newPassword: z.string().min(1).optional(),
+    })
+    .refine(
+      (b) =>
+        b.name !== undefined ||
+        b.email !== undefined ||
+        b.newPassword !== undefined,
+      { message: "Provide name, email, and/or newPassword" },
+    )
+    .refine(
+      (b) => !b.newPassword || Boolean(b.currentPassword),
+      { message: "currentPassword is required to set a new password", path: ["currentPassword"] },
+    );
+
+  r.patch("/me", ...meAuth, validateBody(patchMeSchema), async (req, res, next) => {
+    try {
+      const body = req.body as z.infer<typeof patchMeSchema>;
+      const user = await prisma.user.findUniqueOrThrow({
+        where: { id: req.user!.id },
+      });
+
+      if (body.newPassword) {
+        const ok = await verifyPassword(
+          body.currentPassword!,
+          user.passwordHash,
+        );
+        if (!ok) {
+          return next(unauthorizedError("Current password is incorrect"));
+        }
+        const issues = passwordIssues(body.newPassword);
+        if (issues.length) {
+          return next(
+            validationError(
+              "Invalid password",
+              issues.map((m) => ({ path: "newPassword", message: m })),
+            ),
+          );
+        }
+      }
+
+      if (body.email && body.email.toLowerCase() !== user.email.toLowerCase()) {
+        const taken = await prisma.user.findUnique({
+          where: { email: body.email.toLowerCase() },
+        });
+        if (taken) return next(conflictError("Email already registered"));
+      }
+
+      const data: {
+        name?: string | null;
+        email?: string;
+        passwordHash?: string;
+      } = {};
+      if (body.name !== undefined) data.name = body.name;
+      if (body.email) data.email = body.email.toLowerCase();
+      if (body.newPassword) data.passwordHash = await hashPassword(body.newPassword);
+
+      const updated = await prisma.user.update({
+        where: { id: user.id },
+        data,
+      });
+
+      res.json({
+        user: {
+          id: updated.id,
+          email: updated.email,
+          name: updated.name,
+          isAdmin: updated.isAdmin,
+        },
+      });
     } catch (err) {
       next(err);
     }
