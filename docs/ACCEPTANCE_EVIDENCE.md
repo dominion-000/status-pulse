@@ -1,4 +1,4 @@
-# SP-5YT0 — Acceptance evidence (scenarios 1–7)
+# Acceptance evidence (scenarios 1–7)
 
 **Product:** Status Pulse (API) + StatusGrep (UI)  
 **API:** https://status-pulse-ng8d.onrender.com  
@@ -162,17 +162,3 @@
 | 5        | Outbox + dispatcher attempts / backoff                                     |
 | 6        | `is_public` on services; public route filters                              |
 | 7        | Paystack initialize → checkout → verify → `payment_attempts` + plan update |
-
-## Demo accounts / setup
-
-- Owner email used in live demo:
-- Admin (if shown):
-- Env: Paystack test keys, mail provider
-
-## Sign-off
-
-| Item                                                   | Done |
-| ------------------------------------------------------ | ---- |
-| Scenarios 1–7 exercised on deployed environment        | []   |
-| Screenshots or API captures attached / linked          | []   |
-| Known limitations noted (e.g. mail domain, test cards) | []   |

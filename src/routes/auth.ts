@@ -231,15 +231,25 @@ export function authRoutes(prisma: PrismaClient, config: Config): Router {
               passwordResetExpiresAt: new Date(Date.now() + 3600_000),
             },
           });
+          const appUrl = (process.env.PUBLIC_APP_URL || process.env.STATUSGREP_URL || "")
+            .trim()
+            .replace(/\/$/, "");
+          const resetLink = appUrl
+            ? `${appUrl}/reset-password?token=${encodeURIComponent(raw)}`
+            : "";
           await prisma.outboxMessage.create({
             data: {
               kind: "password_reset",
               recipientEmail: user.email,
               subject: "Reset your StatusGrep password",
               body: [
-                "Hello,",
+                `Hello${user.name ? ` ${user.name}` : ""},`,
                 "",
-                "Use this token within one hour to reset your password:",
+                "You requested a password reset. This link expires in one hour.",
+                resetLink || "Open StatusGrep → Reset password and paste this token:",
+                resetLink || raw,
+                "",
+                "If the link does not work, use this token on the Reset password page:",
                 raw,
                 "",
                 "If you did not request this, ignore this message.",
