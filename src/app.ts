@@ -5,6 +5,7 @@ import { createRequestLogger } from "./logging";
 import type { Config } from "./config";
 import { AppError } from "./errors";
 import { authRoutes } from "./routes/auth";
+import { eventsRoutes } from "./routes/events";
 import { projectRoutes } from "./routes/projects";
 import { serviceRoutes } from "./routes/services";
 import { resultRoutes } from "./routes/results";
@@ -77,7 +78,8 @@ function mountApi(
 ) {
   const api = express.Router();
   api.use("/auth", authRoutes(deps.prisma, deps.config));
-  api.use("/projects", projectRoutes(deps.prisma, deps.config));
+  api.use("/projects/:projectId/events", eventsRoutes(deps.prisma, deps.config));
+api.use("/projects", projectRoutes(deps.prisma, deps.config));
   api.use(
     "/projects/:projectId/services",
     serviceRoutes(deps.prisma, deps.config),
