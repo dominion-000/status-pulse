@@ -339,7 +339,7 @@ async function finalizeWithAttempt(
                 `Your project "${project.name}" is now on the ${target.name} plan.`,
                 `Paystack reference: ${args.reference}`,
                 "",
-                "This is a StatusGrep confirmation. Paystack may also send its own receipt.",
+                "This is your StatusGrep confirmation of the plan change. Paystack sends a separate payment receipt.",
                 "",
                 "— StatusGrep",
               ].join("\n"),
