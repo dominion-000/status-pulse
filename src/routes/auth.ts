@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import type { PrismaClient } from "../../prisma/generated";
@@ -86,6 +87,21 @@ export function authRoutes(prisma: PrismaClient, config: Config): Router {
           return next(conflictError("Email already registered"));
         }
         const user = created.user;
+
+        await prisma.outboxMessage.create({
+          data: {
+            kind: "account_welcome",
+            recipientEmail: user.email,
+            subject: "Welcome to StatusGrep",
+            body: [
+              "Hello" + (user.name ? `, ${user.name}` : "") + ",",
+              "",
+              "Your StatusGrep account is ready. Sign in to create a project and start monitoring endpoints.",
+              "",
+              "— StatusGrep",
+            ].join("\n"),
+          },
+        });
 
         const { raw, hash } = generateRefreshToken();
         const expiresAt = new Date(
@@ -194,6 +210,97 @@ export function authRoutes(prisma: PrismaClient, config: Config): Router {
       next(err);
     }
   });
+
+
+
+  r.post(
+    "/forgot-password",
+    rateLimit({ name: "auth", store: authRateLimitStore }),
+    validateBody(z.object({ email: z.string().email() })),
+    async (req, res, next) => {
+      try {
+        const email = (req.body as { email: string }).email.trim().toLowerCase();
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (user) {
+          const raw = randomBytes(32).toString("hex");
+          const tokenHash = createHash("sha256").update(raw).digest("hex");
+          await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              passwordResetTokenHash: tokenHash,
+              passwordResetExpiresAt: new Date(Date.now() + 3600_000),
+            },
+          });
+          await prisma.outboxMessage.create({
+            data: {
+              kind: "password_reset",
+              recipientEmail: user.email,
+              subject: "Reset your StatusGrep password",
+              body: [
+                "Hello,",
+                "",
+                "Use this token within one hour to reset your password:",
+                raw,
+                "",
+                "If you did not request this, ignore this message.",
+                "",
+                "— StatusGrep",
+              ].join("\n"),
+            },
+          });
+        }
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
+  r.post(
+    "/reset-password",
+    rateLimit({ name: "auth", store: authRateLimitStore }),
+    validateBody(
+      z.object({ token: z.string().min(1), password: z.string().min(1) }),
+    ),
+    async (req, res, next) => {
+      try {
+        const { token, password } = req.body as {
+          token: string;
+          password: string;
+        };
+        const issues = passwordIssues(password);
+        if (issues.length) {
+          return next(
+            validationError(
+              "Invalid password",
+              issues.map((m) => ({ path: "password", message: m })),
+            ),
+          );
+        }
+        const tokenHash = createHash("sha256").update(token).digest("hex");
+        const user = await prisma.user.findFirst({
+          where: {
+            passwordResetTokenHash: tokenHash,
+            passwordResetExpiresAt: { gt: new Date() },
+          },
+        });
+        if (!user) {
+          return next(unauthorizedError("Invalid or expired reset token"));
+        }
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            passwordHash: await hashPassword(password),
+            passwordResetTokenHash: null,
+            passwordResetExpiresAt: null,
+          },
+        });
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
 
 
   const meAuth = [requireAuth(config), loadUser(prisma)] as const;

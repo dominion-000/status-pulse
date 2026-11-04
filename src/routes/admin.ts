@@ -234,5 +234,70 @@ export function adminRoutes(prisma: PrismaClient, config: Config) {
     }
   });
 
+
+  r.post("/users/:userId/admin", ...auth, async (req, res, next) => {
+    try {
+      const userId = String(req.params.userId);
+      const action = (req.body as { action?: string })?.action;
+      if (action !== "grant" && action !== "revoke") {
+        res.status(422).json({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "action must be grant or revoke",
+          },
+        });
+        return;
+      }
+      if (userId === req.user!.id && action === "revoke") {
+        res.status(409).json({
+          error: {
+            code: "CONFLICT",
+            message: "Cannot revoke your own admin access",
+          },
+        });
+        return;
+      }
+      const target = await prisma.user.findUnique({ where: { id: userId } });
+      if (!target) {
+        res.status(404).json({
+          error: { code: "NOT_FOUND", message: "User not found" },
+        });
+        return;
+      }
+      const updated = await prisma.user.update({
+        where: { id: userId },
+        data: { isAdmin: action === "grant" },
+      });
+      await prisma.outboxMessage.create({
+        data: {
+          kind: "admin_access",
+          recipientEmail: updated.email,
+          subject:
+            action === "grant"
+              ? "Platform admin access granted — StatusGrep"
+              : "Platform admin access revoked — StatusGrep",
+          body: [
+            "Hello,",
+            "",
+            action === "grant"
+              ? "You were granted platform administrator access on Status Pulse / StatusGrep."
+              : "Your platform administrator access was revoked.",
+            "",
+            "— StatusGrep",
+          ].join("\n"),
+        },
+      });
+      res.json({
+        user: {
+          id: updated.id,
+          email: updated.email,
+          isAdmin: updated.isAdmin,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   return r;
 }

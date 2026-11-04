@@ -323,6 +323,29 @@ async function finalizeWithAttempt(
             },
           },
         });
+        const actor = await tx.user.findUnique({
+          where: { id: args.actorUserId },
+        });
+        if (actor) {
+          await tx.outboxMessage.create({
+            data: {
+              projectId: args.projectId,
+              kind: "plan_upgraded",
+              recipientEmail: actor.email,
+              subject: `Plan upgraded to ${target.name} — ${project.name}`,
+              body: [
+                "Hello,",
+                "",
+                `Your project "${project.name}" is now on the ${target.name} plan.`,
+                `Paystack reference: ${args.reference}`,
+                "",
+                "This is a StatusGrep confirmation. Paystack may also send its own receipt.",
+                "",
+                "— StatusGrep",
+              ].join("\n"),
+            },
+          });
+        }
         return true;
       },
       { maxWait: 15_000, timeout: 30_000 },
