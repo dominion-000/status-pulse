@@ -277,7 +277,7 @@ export function adminRoutes(prisma: PrismaClient, config: Config) {
               ? "Platform admin access granted — StatusGrep"
               : "Platform admin access revoked — StatusGrep",
           body: [
-            "Hello,",
+            `Hello${updated.name ? ` ${updated.name}` : ""},`,
             "",
             action === "grant"
               ? "You were granted platform administrator access on Status Pulse / StatusGrep."

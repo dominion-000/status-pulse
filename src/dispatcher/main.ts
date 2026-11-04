@@ -34,8 +34,8 @@ export async function dispatcherTick(
       .split("\n")
       .map((line) =>
         line.trim()
-          ? `<p style="margin:0 0 12px;font-size:13px;line-height:1.55;color:#c5d0dc;">${escapeXml(line)}</p>`
-          : "",
+          ? `<p style="margin:0 0 18px;font-size:14px;line-height:1.65;color:#c5d0dc;">${escapeXml(line)}</p>`
+          : `<p style="margin:0 0 10px;line-height:0.5;">&nbsp;</p>`,
       )
       .join("");
     await sender({

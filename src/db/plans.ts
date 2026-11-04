@@ -334,7 +334,7 @@ async function finalizeWithAttempt(
               recipientEmail: actor.email,
               subject: `Plan upgraded to ${target.name} — ${project.name}`,
               body: [
-                "Hello,",
+                `Hello${actor.name ? ` ${actor.name}` : ""},`,
                 "",
                 `Your project "${project.name}" is now on the ${target.name} plan.`,
                 `Paystack reference: ${args.reference}`,

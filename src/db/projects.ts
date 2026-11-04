@@ -118,7 +118,7 @@ export async function inviteMember(
           recipientEmail: user.email,
           subject: `Added to project ${project.name}`,
           body: [
-            "Hello,",
+            `Hello${user.name ? ` ${user.name}` : ""},`,
             "",
             `You were added to the project "${project.name}" as ${args.role}.`,
             "Sign in to StatusGrep to open the project.",
