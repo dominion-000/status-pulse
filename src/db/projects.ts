@@ -111,6 +111,22 @@ export async function inviteMember(
           details: { email: user.email, role: args.role },
         },
       });
+      await tx.outboxMessage.create({
+        data: {
+          projectId: args.projectId,
+          kind: "member_invite",
+          recipientEmail: user.email,
+          subject: `Added to project ${project.name}`,
+          body: [
+            "Hello,",
+            "",
+            `You were added to the project "${project.name}" as ${args.role}.`,
+            "Sign in to StatusGrep to open the project.",
+            "",
+            "— StatusGrep",
+          ].join("\n"),
+        },
+      });
       return {
         kind: "ok",
         user: { id: user.id, email: user.email },

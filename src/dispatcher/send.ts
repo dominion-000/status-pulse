@@ -7,6 +7,7 @@ export interface MailMessage {
   to: string;
   subject: string;
   body: string;
+  html?: string;
 }
 
 export type MailSender = (message: MailMessage) => Promise<void>;
@@ -61,6 +62,7 @@ async function sendWithBrevo(
       to: [{ email: message.to }],
       subject: message.subject,
       textContent: message.body,
+      ...(message.html ? { htmlContent: message.html } : {}),
     }),
   });
   if (!res.ok) {

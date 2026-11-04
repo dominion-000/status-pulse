@@ -10,6 +10,7 @@ import {
   outboxBackoffSeconds,
 } from "../db/outbox";
 import { createDefaultSender, type MailSender } from "./send";
+import { emailShell } from "./email-html";
 
 const TICK_MS = 1000;
 
@@ -29,10 +30,19 @@ export async function dispatcherTick(
   if (!msg) return false;
 
   try {
+    const htmlBody = msg.body
+      .split("\n")
+      .map((line) =>
+        line.trim()
+          ? `<p style="margin:0 0 12px;font-size:13px;line-height:1.55;color:#c5d0dc;">${escapeXml(line)}</p>`
+          : "",
+      )
+      .join("");
     await sender({
       to: msg.recipient_email,
       subject: msg.subject,
       body: msg.body,
+      html: emailShell(htmlBody || `<p style="margin:0;color:#c5d0dc;">${escapeXml(msg.body)}</p>`),
     });
     await markOutboxDelivered(pool, msg.id, now);
     console.log(
@@ -48,6 +58,14 @@ export async function dispatcherTick(
     );
   }
   return true;
+}
+
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 async function main(): Promise<void> {
